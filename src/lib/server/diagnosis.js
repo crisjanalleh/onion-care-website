@@ -1,0 +1,93 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireUser } from "@/lib/auth-middleware";
+import { getDb } from "@/lib/appDatabase";
+import { DISEASE_BY_ID } from "@/lib/domain/catalogue";
+import { evaluateDiagnosis } from "@/lib/domain/diagnosis";
+import { fail, requireProfile } from "./shared";
+
+/**
+ * Saved symptom-checklist assessments. The rules live in `@/lib/domain/diagnosis`:
+ * the server re-runs them rather than trusting the browser's copy, so a stored
+ * record always names the ruleset that produced it.
+ */
+
+const serviceEntities = () => getDb().asServiceRole?.entities ?? getDb().entities;
+
+export const saveDiagnosis = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(
+    z.object({
+      symptomCategory: z.string(),
+      selectedSymptoms: z.array(z.string()).min(1, "Record at least one symptom."),
+      lotArea: z.number().positive(),
+      lotAreaUnit: z.string(),
+      affectedAreaPercent: z.number().min(0).max(100),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const profile = await requireProfile(context);
+    const result = evaluateDiagnosis(data.symptomCategory, data.selectedSymptoms);
+
+    if (result.resultType === "no_match") {
+      throw fail("This combination of symptoms does not match a stored rule, so it cannot be saved.", 422);
+    }
+
+    const leadId = result.candidateDiseaseIds[0] ?? null;
+    const occurredAt = new Date().toISOString();
+
+    const record = await serviceEntities().DiagnosisRecord.create({
+      farmerUid: profile.uid,
+      farmerUsername: profile.username,
+      name: profile.name,
+      location: profile.location,
+      symptomCategory: result.symptomCategory,
+      selectedSymptoms: result.selectedSymptoms,
+      resultType: result.resultType,
+      candidateDiseaseIds: result.candidateDiseaseIds,
+      diseaseId: result.resultType === "single_match" ? leadId : null,
+      diseaseName: result.resultType === "single_match" ? DISEASE_BY_ID[leadId]?.legacyLabel ?? null : null,
+      matchedRuleId: result.matchedRuleId,
+      rulesetVersion: result.rulesetVersion,
+      areaFormulaVersion: result.areaFormulaVersion,
+      lotArea: data.lotArea,
+      lotAreaUnit: data.lotAreaUnit,
+      affectedAreaPercent: data.affectedAreaPercent,
+      occurredAt,
+      schemaVersion: 2,
+      legacyPath: `diagnoses/${profile.username}/${occurredAt}`,
+    });
+
+    return { record };
+  });
+
+export const getDiagnosis = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ diagnosisId: z.string() }))
+  .handler(async ({ data, context }) => {
+    const entities = serviceEntities();
+    const record = await entities.DiagnosisRecord.get(data.diagnosisId).catch(() => null);
+    if (!record) throw fail("That diagnosis could not be found.", 404);
+    if (record.farmerUid !== context.user.id && context.user.role !== "admin") {
+      throw fail("You do not have access to this record.", 403);
+    }
+
+    const found = await Promise.all(
+      (record.candidateDiseaseIds ?? []).map(async (diseaseId) => {
+        const rows = await entities.Disease.filter({ diseaseId });
+        const disease = rows[0];
+        if (!disease) return null;
+        return {
+          id: disease.id,
+          diseaseId,
+          legacyLabel: disease.legacyLabel,
+          summary: disease.summary,
+          culturalGuidance: disease.culturalGuidance,
+          culturalGuidanceStatus: disease.culturalGuidanceStatus,
+          contentStatus: disease.contentStatus,
+        };
+      }),
+    );
+
+    return { record, diseases: found.filter(Boolean) };
+  });
