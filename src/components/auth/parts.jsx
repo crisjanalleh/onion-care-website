@@ -1,11 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { db } from "@/api/appClient";
 import { returnToSearch } from "@/lib/authReturnTo";
-import { getAppParams } from "@/lib/app-params";
-import { loginWithGoogle } from "@/lib/authMfa";
+import {
+  completeGoogleRedirect,
+  firebaseAuthErrorMessage,
+  sendVerificationEmail,
+  signInGoogle,
+} from "@/lib/firebase/auth-client";
 
 export function AuthError({ message, children }) {
   const content = message ?? children;
@@ -25,25 +28,45 @@ export function AuthLink({ to, href, returnTo, search, className, children, ...p
   );
 }
 
-export function GoogleButton({ children = "Continue with Google", returnTo = "/", onError, disabled }) {
+export function GoogleButton({ children = "Continue with Google", returnTo = "/", onError, onNeedsVerification, disabled }) {
   const [busy, setBusy] = useState(false);
+  const onErrorRef = useRef(onError);
+  const onNeedsVerificationRef = useRef(onNeedsVerification);
+  onErrorRef.current = onError;
+  onNeedsVerificationRef.current = onNeedsVerification;
+
+  const finishSignIn = useCallback(async (user) => {
+    if (!user.emailVerified) {
+      await sendVerificationEmail(user);
+      onNeedsVerificationRef.current?.(user.email ?? "");
+      return;
+    }
+    window.location.assign(returnTo);
+  }, [returnTo]);
+
+  useEffect(() => {
+    let active = true;
+    completeGoogleRedirect()
+      .then((user) => {
+        if (active && user) return finishSignIn(user);
+      })
+      .catch((error) => {
+        if (active) onErrorRef.current?.(firebaseAuthErrorMessage(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [finishSignIn]);
 
   async function signIn() {
     setBusy(true);
     try {
-      const result = getAppParams().appId
-        ? await loginWithGoogle(returnTo)
-        : await db.auth.loginWithProvider("google", returnTo);
+      const result = await signInGoogle();
       if (result?.redirecting) return;
-      if (result?.access_token) db.auth.setToken(result.access_token);
-      if (await db.auth.isAuthenticated()) {
-        window.location.assign(returnTo);
-        return;
-      }
+      if (result?.user) await finishSignIn(result.user);
       setBusy(false);
-      onError?.("Google sign-in did not establish a session. Please try again.");
     } catch (error) {
-      onError?.(error?.message || "Google sign-in could not be completed.");
+      onErrorRef.current?.(firebaseAuthErrorMessage(error));
       setBusy(false);
     }
   }

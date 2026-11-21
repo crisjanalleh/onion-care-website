@@ -1,9 +1,8 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 import { isFarmerVisibleAsset } from "@/lib/domain/media";
+import { svc } from "./shared";
 
 /**
  * Farmer-facing reads of the reference-image library.
@@ -29,8 +28,7 @@ export const getDiseaseImage = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .validator(z.object({ diseaseId: z.string() }))
   .handler(async ({ data, context }) => {
-    const database = context.getDatabase();
-    const page = await db.asServiceRole.entities.MediaAsset.filter(
+    const page = await svc(context).entities.MediaAsset.filter(
       { category: "disease", relatedDiseaseId: data.diseaseId, approvalStatus: "approved", verificationStatus: "verified" },
       { sort: "-created_date", limit: 12 },
     );
@@ -41,8 +39,7 @@ export const getDiseaseImage = createServerFn({ method: "GET" })
 export const listDiseaseImages = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
-    const database = context.getDatabase();
-    const page = await db.asServiceRole.entities.MediaAsset.filter(
+    const page = await svc(context).entities.MediaAsset.filter(
       { category: "disease", approvalStatus: "approved", verificationStatus: "verified" },
       { sort: "-created_date", limit: 200 },
     );

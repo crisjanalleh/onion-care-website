@@ -1,5 +1,3 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -10,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-import { savePestContent } from "@/lib/server/content";
+import { listPestsForAdmin, savePestContent } from "@/lib/server/content";
 
 export const Route = createFileRoute("/_authed/_admin/admin/content/pests")({
   component: PestContent,
@@ -24,7 +22,7 @@ function PestContent() {
   const [message, setMessage] = useState(null);
 
   const load = useCallback(async () => {
-    const page = await db.entities.Pest.filter({}, { sort: "sortOrder", limit: 20 });
+    const page = await listPestsForAdmin();
     setState({ loading: false, items: page.items ?? [], error: null });
   }, []);
 

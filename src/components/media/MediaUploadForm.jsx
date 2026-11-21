@@ -1,5 +1,3 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { useState } from "react";
 import { Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +6,8 @@ import { Label } from "@/components/ui/label";
 
 import { saveMediaAsset } from "@/lib/server/content";
 import { DISEASES, PESTS } from "@/lib/domain/catalogue";
-import { MEDIA_CATEGORIES, MEDIA_ORIGINS, VERIFICATION_STATUSES } from "@/lib/domain/media";
+import { MEDIA_CATEGORIES, MEDIA_ORIGINS } from "@/lib/domain/media";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 
 const EMPTY = {
   title: "",
@@ -21,8 +20,6 @@ const EMPTY = {
   source: "",
   license: "",
   origin: "admin_upload",
-  approvalStatus: "pending",
-  verificationStatus: "needs_review",
 };
 
 const selectClass = "mt-1.5 h-10 w-full rounded-md border border-input bg-background px-3 text-sm";
@@ -61,15 +58,29 @@ export default function MediaUploadForm({ onSaved }) {
     setBusy(true);
     setError(null);
     try {
-      const { file_url } = await db.integrations.Core.UploadPublicFile({ file });
+      const currentUser = getFirebaseAuth().currentUser;
+      if (!currentUser) throw new Error("Sign in again before uploading an image.");
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch("/api/media-upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": file.type,
+          "X-File-Name": encodeURIComponent(file.name),
+        },
+        body: file,
+      });
+      const uploaded = await response.json();
+      if (!response.ok) throw new Error(uploaded.error ?? "The image upload failed.");
       await saveMediaAsset({
         data: {
           title: form.title,
           category: form.category,
-          fileUrl: file_url,
-          fileName: file.name,
-          contentType: file.type || undefined,
-          fileSizeBytes: file.size,
+          fileUrl: uploaded.fileUrl,
+          fileName: uploaded.fileName,
+          storagePath: uploaded.storagePath,
+          contentType: uploaded.contentType,
+          fileSizeBytes: uploaded.fileSizeBytes,
           width: dimensions?.width,
           height: dimensions?.height,
           relatedDiseaseId: isDisease ? form.relatedDiseaseId || undefined : undefined,
@@ -80,9 +91,6 @@ export default function MediaUploadForm({ onSaved }) {
           source: form.source || undefined,
           license: form.license || undefined,
           origin: form.origin,
-          approvalStatus: form.approvalStatus,
-          verificationStatus: isDisease ? form.verificationStatus : "not_applicable",
-          isActive: true,
         },
       });
       setForm(EMPTY);
@@ -198,32 +206,9 @@ export default function MediaUploadForm({ onSaved }) {
           <Input id="media-attribution" value={form.attribution} onChange={(e) => setForm((p) => ({ ...p, attribution: e.target.value }))} className="mt-1.5" placeholder="Photographer or institution to credit" />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="media-approval">Approval</Label>
-            <select id="media-approval" value={form.approvalStatus} onChange={(e) => setForm((p) => ({ ...p, approvalStatus: e.target.value }))} className={selectClass}>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          {isDisease ? (
-            <div>
-              <Label htmlFor="media-verification">Verification</Label>
-              <select id="media-verification" value={form.verificationStatus} onChange={(e) => setForm((p) => ({ ...p, verificationStatus: e.target.value }))} className={selectClass}>
-                {VERIFICATION_STATUSES.map((status) => (
-                  <option key={status.id} value={status.id}>
-                    {status.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-        </div>
-
         {isDisease && form.origin === "illustrative" ? (
           <p className="rounded-md border border-border bg-secondary/60 p-3 text-xs leading-relaxed text-muted-foreground">
-            A illustration can never be verified as a disease reference. Keep it as a clearly labelled illustration, or upload a real
+            An illustration can never be verified as a disease reference. Keep it as a clearly labelled illustration, or upload a real
             photograph with its source and licence.
           </p>
         ) : null}

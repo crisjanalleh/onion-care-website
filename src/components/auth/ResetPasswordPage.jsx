@@ -1,19 +1,21 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, KeyRound, Lock } from "lucide-react";
-import { db } from "@/api/appClient";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { firebaseAuthErrorMessage, resetPassword, verifyResetCode } from "@/lib/firebase/auth-client";
 
-function readResetToken() {
+function readResetCode() {
   if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
-  return params.get("token") || params.get("code") || params.get("oobCode") || "";
+  return params.get("oobCode") || "";
 }
 
 export function ResetPasswordPage() {
   const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [checkingCode, setCheckingCode] = useState(true);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -22,11 +24,17 @@ export function ResetPasswordPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const resetToken = readResetToken();
+    const resetToken = readResetCode();
     setToken(resetToken);
     if (!resetToken) {
       setError("This password reset link is missing its security token. Request a new reset email.");
+      setCheckingCode(false);
+      return;
     }
+    verifyResetCode(resetToken)
+      .then(setEmail)
+      .catch((codeError) => setError(firebaseAuthErrorMessage(codeError)))
+      .finally(() => setCheckingCode(false));
   }, []);
 
   async function updatePassword(event) {
@@ -47,21 +55,10 @@ export function ResetPasswordPage() {
 
     setBusy(true);
     try {
-      const auth = db.auth;
-      const methodName = ["resetPassword", "confirmPasswordReset", "setNewPassword"]
-        .find((name) => typeof auth?.[name] === "function");
-      if (!methodName) {
-        throw new Error("Password reset is not available in the current authentication configuration.");
-      }
-      const method = auth[methodName];
-      const payload = methodName === "confirmPasswordReset"
-        ? { oobCode: token, newPassword: password }
-        : { token, password };
-      const result = await method.call(auth, payload);
-      if (result?.ok === false) throw new Error(result.message || "Unable to update your password.");
+      await resetPassword(token, password);
       setUpdated(true);
     } catch (updateError) {
-      setError(updateError?.message || "Unable to update your password. Request a new reset email and try again.");
+      setError(firebaseAuthErrorMessage(updateError));
     } finally {
       setBusy(false);
     }
@@ -78,6 +75,8 @@ export function ResetPasswordPage() {
         </div>
       ) : (
         <>
+          {email ? <p className="mb-4 text-sm text-muted-foreground">Updating password for {email}</p> : null}
+          {checkingCode ? <p className="mb-4 text-sm text-muted-foreground" role="status">Checking reset link…</p> : null}
           <AuthError message={error} />
           <form className="space-y-4" onSubmit={updatePassword}>
             <div className="space-y-2">
@@ -94,7 +93,7 @@ export function ResetPasswordPage() {
               <Label htmlFor="confirm-new-password">Confirm new password</Label>
               <Input id="confirm-new-password" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={8} required value={confirm} onChange={(event) => setConfirm(event.target.value)} className="h-12" disabled={busy} />
             </div>
-            <SubmitButton busy={busy} busyLabel="Updating password...">Update password</SubmitButton>
+            <SubmitButton busy={busy} busyLabel="Updating password..." disabled={checkingCode || !token || Boolean(error)}>Update password</SubmitButton>
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Need a new reset link? <AuthLink to="/forgot-password">Request another</AuthLink>

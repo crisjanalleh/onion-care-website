@@ -11,31 +11,37 @@ export function fail(message, status = 400) {
   return Object.assign(new Error(message), { status });
 }
 
-/** Only an administrator may continue; the caller's role comes from `auth.me()`. */
+/** Only an administrator may continue; the caller's role comes from a trusted account record. */
 export function assertAdmin(user) {
   if (user?.role !== "admin") throw fail("Administrator access is required.", 403);
 }
 
-/** The visitor-scoped entity handle. */
-function visitorEntities(database) {
-  return database?.entities ?? {};
-}
-
-/** The service-role entity handle, which skips those rules. */
+/** The server-side entity handle, available only to server functions. */
 function serviceEntities(database) {
-  return (database?.asServiceRole ?? database)?.entities ?? {};
+  const entities = database?.entities;
+  if (!entities) throw fail("Firebase data access is not available.", 503);
+  return entities;
 }
 
-/** `svc(context)` — the service-role handle a handler writes through. */
+/** `svc(context)` — the server-side handle a handler writes through. */
 export function svc(context) {
-  const database = context.getDatabase();
-  return database?.asServiceRole ?? database;
+  return { entities: serviceEntities(context.getDatabase()) };
 }
 
-/** The OnionCare profile attached to a application user id, or null. */
+export function toPage(rows) {
+  const items = rows.items ?? rows;
+  const nextCursor = rows.nextCursor ?? null;
+  return {
+    items,
+    next_cursor: nextCursor,
+    has_more: Boolean(nextCursor),
+  };
+}
+
+/** The OnionCare profile attached to an application user id, or null. */
 export async function getProfileForUser(database, uid) {
   if (!uid) return null;
-  const rows = await visitorEntities(database).FarmerProfile.filter({ uid });
+  const rows = await serviceEntities(database).FarmerProfile.filter({ uid });
   return rows[0] ?? null;
 }
 
@@ -75,7 +81,10 @@ export async function writeAudit(database, { actor, action, entityType, entityId
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[audit] could not record", action, error);
+    console.error("[audit] could not record", action, {
+      status: error?.status ?? null,
+      code: error?.code ?? null,
+    });
   }
 }
 
@@ -102,6 +111,9 @@ export async function notify(
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[notify] could not deliver", type, error);
+    console.error("[notify] could not deliver", type, {
+      status: error?.status ?? null,
+      code: error?.code ?? null,
+    });
   }
 }

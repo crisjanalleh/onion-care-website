@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { KeyRound, Mail } from "lucide-react";
-import { db } from "@/api/appClient";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { AuthError, AuthLink, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSafeReturnTo } from "@/lib/authReturnTo";
+import { firebaseAuthErrorMessage, requestPasswordReset } from "@/lib/firebase/auth-client";
 
 export function ForgotPasswordPage() {
   const returnTo = useSafeReturnTo();
@@ -19,18 +19,10 @@ export function ForgotPasswordPage() {
     setError("");
     setBusy(true);
     try {
-      const auth = db.auth;
-      const methodName = ["forgotPassword", "requestPasswordReset", "sendPasswordResetEmail"]
-        .find((name) => typeof auth?.[name] === "function");
-      if (!methodName) {
-        throw new Error("Password recovery is not available in the current authentication configuration.");
-      }
-      const method = auth[methodName];
-      const result = await method.call(auth, methodName === "sendPasswordResetEmail" ? email.trim() : { email: email.trim() });
-      if (result?.ok === false) throw new Error(result.message || "Unable to send a password reset email.");
+      await requestPasswordReset(email);
       setSent(true);
     } catch (requestError) {
-      setError(requestError?.message || "Unable to send a password reset email. Please try again.");
+      setError(firebaseAuthErrorMessage(requestError));
     } finally {
       setBusy(false);
     }

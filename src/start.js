@@ -1,16 +1,16 @@
-import "@/lib/appDatabase";
-import { createStart } from "@tanstack/react-start";
+import { createCsrfMiddleware, createStart } from "@tanstack/react-start";
 import { errorCaptureFunctionMiddleware, errorCaptureRequestMiddleware } from "@/lib/error-capture";
 import { authMiddleware, databaseRequestMiddleware } from "@/lib/auth-middleware";
 
+const csrfMiddleware = createCsrfMiddleware({
+  filter: (context) => context.handlerType === "serverFn",
+});
+
 /**
- * The start entry (`src/start.js`), detected automatically. The error-capture
- * pair must stay first in each list; Application replaces `@/lib/error-capture` with
- * newer versions and expects that order. `authMiddleware` then gives every
- * server function the visitor's Application client as `context.getDatabase()`, and
- * `databaseRequestMiddleware` does the same for server routes.
+ * The Start entry. Error capture runs first, followed by Firebase request
+ * authentication for server functions and route handlers.
  */
 export const startInstance = createStart(() => ({
-  requestMiddleware: [errorCaptureRequestMiddleware, databaseRequestMiddleware],
+  requestMiddleware: [csrfMiddleware, errorCaptureRequestMiddleware, databaseRequestMiddleware],
   functionMiddleware: [errorCaptureFunctionMiddleware, authMiddleware],
 }));

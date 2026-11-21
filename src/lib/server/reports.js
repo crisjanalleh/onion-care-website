@@ -1,11 +1,17 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 import { DISEASE_BY_ID, REPORT_STATUS_LABEL, REPORT_TRANSITIONS } from "@/lib/domain/catalogue";
 import { legacyTimestamp } from "@/lib/format";
-import { assertAdmin, fail, notify, requireProfile, resolveAdminForLocation, writeAudit } from "./shared";
+import { assertAdmin, fail, notify, requireProfile, resolveAdminForLocation, svc, toPage, writeAudit } from "./shared";
+
+export const getDiseaseReportCounts = createServerFn({ method: "GET" })
+  .middleware([requireUser])
+  .handler(async ({ context }) => {
+    assertAdmin(context.user);
+    const page = await svc(context).entities.Disease.filter({}, { sort: "sortOrder", limit: 20 });
+    return toPage(page);
+  });
 
 export const submitDiseaseReport = createServerFn({ method: "POST" })
   .middleware([requireUser])
@@ -20,10 +26,11 @@ export const submitDiseaseReport = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const database = context.getDatabase();
     const profile = await requireProfile(context);
+    const entities = svc(context).entities;
     const disease = DISEASE_BY_ID[data.diseaseId];
     const diseaseName = disease?.legacyLabel ?? "Needs classification";
 
-    const existing = await db.asServiceRole.entities.DiseaseReport.filter({
+    const existing = await entities.DiseaseReport.filter({
       farmerUid: profile.uid,
       idempotencyKey: data.idempotencyKey,
     });
@@ -32,7 +39,7 @@ export const submitDiseaseReport = createServerFn({ method: "POST" })
     }
 
     const timestamp = legacyTimestamp();
-    const report = await db.asServiceRole.entities.DiseaseReport.create({
+    const report = await entities.DiseaseReport.create({
       name: profile.name,
       diseaseName,
       diseaseId: disease?.id ?? null,
@@ -50,15 +57,15 @@ export const submitDiseaseReport = createServerFn({ method: "POST" })
       legacyPath: `diseases/${diseaseName}/farmerReports/${data.idempotencyKey}`,
     });
 
-    await db.asServiceRole.entities.DiseaseReport.update(report.id, {
+    await entities.DiseaseReport.update(report.id, {
       legacyPath: `diseases/${diseaseName}/farmerReports/${report.id}`,
     });
 
     if (disease) {
-      const rows = await db.asServiceRole.entities.Disease.filter({ diseaseId: disease.id });
+      const rows = await entities.Disease.filter({ diseaseId: disease.id });
       const record = rows[0];
       if (record) {
-        await db.asServiceRole.entities.Disease.update(record.id, {
+        await entities.Disease.update(record.id, {
           reportCount: (record.reportCount ?? 0) + 1,
           newReportCount: (record.newReportCount ?? 0) + 1,
         });
@@ -102,7 +109,8 @@ export const updateReportStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     assertAdmin(context.user);
     const database = context.getDatabase();
-    const report = await db.asServiceRole.entities.DiseaseReport.get(data.reportId).catch(() => null);
+    const entities = svc(context).entities;
+    const report = await entities.DiseaseReport.get(data.reportId);
     if (!report) throw fail("That report could not be found.", 404);
 
     const allowed = REPORT_TRANSITIONS[report.status] ?? [];
@@ -112,7 +120,7 @@ export const updateReportStatus = createServerFn({ method: "POST" })
       );
     }
 
-    const updated = await db.asServiceRole.entities.DiseaseReport.update(report.id, {
+    const updated = await entities.DiseaseReport.update(report.id, {
       status: data.status,
       reviewedAt: new Date().toISOString(),
       reviewedByUid: context.user.id,
@@ -120,10 +128,10 @@ export const updateReportStatus = createServerFn({ method: "POST" })
     });
 
     if (report.status === "new") {
-      const rows = await db.asServiceRole.entities.Disease.filter({ diseaseId: report.diseaseId });
+      const rows = await entities.Disease.filter({ diseaseId: report.diseaseId });
       const record = rows[0];
       if (record) {
-        await db.asServiceRole.entities.Disease.update(record.id, {
+        await entities.Disease.update(record.id, {
           newReportCount: Math.max(0, (record.newReportCount ?? 0) - 1),
         });
       }
@@ -179,26 +187,27 @@ export const listReports = createServerFn({ method: "POST" })
         { location: { $regex: term, $options: "i" } },
       ];
     }
-    return context.getDatabase().entities.DiseaseReport.filter(query, {
+    const page = await svc(context).entities.DiseaseReport.filter(query, {
       sort: "-created_date",
       limit: data.limit ?? 25,
       ...(data.cursor ? { cursor: data.cursor } : {}),
     });
+    return toPage(page);
   });
 
 export const getReportDetail = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ reportId: z.string() }))
   .handler(async ({ data, context }) => {
-    const database = context.getDatabase();
-    const report = await db.asServiceRole.entities.DiseaseReport.get(data.reportId).catch(() => null);
+    const entities = svc(context).entities;
+    const report = await entities.DiseaseReport.get(data.reportId);
     if (!report) throw fail("That report could not be found.", 404);
 
     const isOwner = report.farmerUid === context.user.id;
     if (!isOwner && context.user.role !== "admin") throw fail("You do not have access to this report.", 403);
 
     const farmer = report.farmerUid
-      ? (await db.asServiceRole.entities.FarmerProfile.filter({ uid: report.farmerUid }))[0] ?? null
+      ? (await entities.FarmerProfile.filter({ uid: report.farmerUid }))[0] ?? null
       : null;
 
     return { report, farmer };
@@ -211,9 +220,10 @@ export const myReports = createServerFn({ method: "POST" })
     const profile = await requireProfile(context);
     const query = { farmerUid: profile.uid };
     if (data.status) query.status = data.status;
-    return context.getDatabase().entities.DiseaseReport.filter(query, {
+    const page = await svc(context).entities.DiseaseReport.filter(query, {
       sort: "-created_date",
       limit: data.limit ?? 25,
       ...(data.cursor ? { cursor: data.cursor } : {}),
     });
+    return toPage(page);
   });

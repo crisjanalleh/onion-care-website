@@ -1,33 +1,40 @@
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { onIdTokenChanged } from "@firebase/auth";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { QueryClientProvider, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { db } from "@/api/appClient";
+import { getMyContext } from "@/lib/server/accounts";
+import {
+  firebaseAuthErrorMessage,
+  signOutFirebaseUser,
+} from "@/lib/firebase/auth-client";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 import { queryClient } from "@/lib/query-client";
 
-// Reads the signed-in visitor from the application account API. A 401/403 simply means nobody
-// is signed in; anything else is surfaced as an `error` so the route gate can
-// tell "not signed in" apart from "signed in but not a user of this app".
 async function fetchAccount() {
   try {
-    const user = await db.auth.me();
-    return { user: user ?? null, error: null };
+    const auth = getFirebaseAuth();
+    const firebaseUser = await new Promise((resolve, reject) => {
+      let unsubscribe = () => {};
+      unsubscribe = onIdTokenChanged(auth, (user) => {
+        unsubscribe();
+        resolve(user);
+      }, reject);
+    });
+    if (!firebaseUser) return { user: null, error: null };
+    const account = await getMyContext();
+    return { user: account.user ?? null, profile: account.profile ?? null, error: null };
   } catch (error) {
-    const status = error?.status;
-    if (status === 401 || status === 403) return { user: null, error: null };
+    if (error?.status === 401 || error?.status === 403) return { user: null, profile: null, error: null };
     return {
       user: null,
+      profile: null,
       error: {
         type: error?.type ?? error?.data?.type ?? null,
-        message: error?.message ?? "Unable to load your account.",
+        message: firebaseAuthErrorMessage(error),
       },
     };
   }
 }
 
-/**
- * The one source of truth for "who is signed in". The route gate reads it from
- * the router's QueryClient (`queryClient.ensureQueryData(authQuery)`), and the
- * provider below reads the same cache, so both always agree.
- */
 export const authQuery = queryOptions({
   queryKey: ["auth", "me"],
   queryFn: fetchAccount,
@@ -39,6 +46,7 @@ const AuthContext = createContext({
   user: null,
   isAuthenticated: false,
   isLoadingAuth: true,
+  error: null,
   navigateToLogin: () => {},
   logout: async () => {},
 });
@@ -47,8 +55,45 @@ function AuthState({ children }) {
   const client = useQueryClient();
   const { data, isPending } = useQuery(authQuery);
 
+  useEffect(() => {
+    let unsubscribe;
+    try {
+      const auth = getFirebaseAuth();
+      unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
+        if (!firebaseUser) {
+          client.setQueryData(authQuery.queryKey, { user: null, profile: null, error: null });
+          return;
+        }
+        try {
+          const account = await getMyContext();
+          client.setQueryData(authQuery.queryKey, {
+            user: account.user ?? null,
+            profile: account.profile ?? null,
+            error: null,
+          });
+        } catch (error) {
+          client.setQueryData(authQuery.queryKey, {
+            user: null,
+            profile: null,
+            error: {
+              type: error?.type ?? error?.data?.type ?? null,
+              message: firebaseAuthErrorMessage(error),
+            },
+          });
+        }
+      });
+    } catch (error) {
+      client.setQueryData(authQuery.queryKey, {
+        user: null,
+        profile: null,
+        error: { type: error?.code ?? null, message: firebaseAuthErrorMessage(error) },
+      });
+    }
+    return () => unsubscribe?.();
+  }, [client]);
+
   const logout = useCallback(async () => {
-    await db.auth.logout?.();
+    await signOutFirebaseUser();
     client.clear();
     if (typeof window !== "undefined") window.location.assign("/login");
   }, [client]);
@@ -58,9 +103,18 @@ function AuthState({ children }) {
   }, []);
 
   const user = data?.user ?? null;
+  const profile = data?.profile ?? null;
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(user), isLoadingAuth: isPending, navigateToLogin, logout }),
-    [user, isPending, navigateToLogin, logout],
+    () => ({
+      user,
+      profile,
+      isAuthenticated: Boolean(user),
+      isLoadingAuth: isPending,
+      error: data?.error ?? null,
+      navigateToLogin,
+      logout,
+    }),
+    [user, profile, isPending, data?.error, navigateToLogin, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

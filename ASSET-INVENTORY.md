@@ -46,9 +46,9 @@ or approved before publication.
 
 ## Existing website assets
 
-No verified Firebase Storage inventory is available. The website source must not continue using
-uncontrolled external `media.db.com` URLs as the authoritative asset store. Missing or blocked assets
-must use neutral fallbacks.
+No live Firebase Storage inventory is available. The former external `media.db.com` URLs were
+removed from the website runtime; missing or blocked assets use neutral fallbacks until approved
+images are available.
 
 ## Required next actions
 

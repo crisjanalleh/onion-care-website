@@ -1,0 +1,10 @@
+FIREBASE_EMULATOR_MODE=true
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+FIREBASE_FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+FIREBASE_DATABASE_EMULATOR_HOST=127.0.0.1:9000
+FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199
+
+# These are only needed outside emulator mode. Add real values with `wrangler secret put`;
+# never place a private key in Vite variables, source control, or chat.
+FIREBASE_SERVICE_ACCOUNT_EMAIL=
+FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY=

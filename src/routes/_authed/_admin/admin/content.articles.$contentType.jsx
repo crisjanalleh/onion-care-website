@@ -1,5 +1,3 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
@@ -10,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-import { saveArticle } from "@/lib/server/content";
+import { listArticlesForAdmin, saveArticle } from "@/lib/server/content";
 import { ARTICLE_TYPES } from "@/lib/domain/catalogue";
 import { formatDateTime } from "@/lib/format";
 
@@ -30,7 +28,7 @@ function ArticleWorkspace() {
   const [message, setMessage] = useState(null);
 
   const load = useCallback(async () => {
-    const page = await db.entities.ContentArticle.filter({ contentType }, { sort: "-updated_date", limit: 50 });
+    const page = await listArticlesForAdmin({ data: { contentType } });
     setState({ loading: false, items: page.items ?? [], error: null });
   }, [contentType]);
 

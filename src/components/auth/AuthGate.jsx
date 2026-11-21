@@ -1,9 +1,6 @@
 import { redirect } from "@tanstack/react-router";
 import { DefaultCatchBoundary } from "@/components/DefaultCatchBoundary";
-import { UserNotRegistered } from "@/components/auth/UserNotRegistered";
 import { authQuery } from "@/lib/AuthContext";
-
-class NotRegisteredError extends Error {}
 
 /**
  * The login gate for a pathless layout route (src/routes/_authed.jsx), which gates
@@ -19,17 +16,20 @@ class NotRegisteredError extends Error {}
  * so these pages render in the browser only, and children inherit that.
  */
 export async function requireSignedIn({ context, location }) {
-  // A /me outage (429, 503) is not a sign-out: it rejects here and reaches the error
-  // boundary, whose "Try again" asks the server again (a failed query caches nothing).
-  const { user, error } = await context.queryClient.ensureQueryData(authQuery);
-  if (user) return { user };
-  // Thrown rather than returned so the children's loaders never run without a user.
-  if (error?.type === "user_not_registered") throw new NotRegisteredError(error.message);
-  // A document navigation on purpose: an app served behind the application login gets the
-  // application's /login, which reads from_url; the app's own /login page reads returnTo.
+  const { user, profile, error } = await context.queryClient.ensureQueryData(authQuery);
+  if (user?.emailVerified === false) {
+    throw redirect({ to: "/verify-email", search: { email: user.email ?? "" } });
+  }
+  if (user) {
+    if (user.role === "farmer" && !profile && location.pathname !== "/onboarding") {
+      throw redirect({ to: "/onboarding" });
+    }
+    return { user, profile };
+  }
+  if (error) throw new Error(error.message);
   throw redirect({ to: "/login", search: { returnTo: location.href, from_url: location.href }, reloadDocument: true });
 }
 
 export function AuthGateError({ error }) {
-  return error instanceof NotRegisteredError ? <UserNotRegistered /> : <DefaultCatchBoundary error={error} />;
+  return <DefaultCatchBoundary error={error} />;
 }

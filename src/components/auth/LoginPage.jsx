@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { useSafeReturnTo } from "@/lib/authReturnTo";
 import { Eye, EyeOff, Lock, Mail, LogIn } from "lucide-react";
-import { db } from "@/api/appClient";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { MfaFlow } from "@/components/auth/MfaFlow";
-import { MfaScreen } from "@/components/auth/MfaParts";
 import { AuthError, AuthLink, GoogleButton, OrDivider, SubmitButton } from "@/components/auth/parts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { loginWithMfa } from "@/lib/authMfa";
-import { getAppParams } from "@/lib/app-params";
+import {
+  firebaseAuthErrorMessage,
+  resendVerificationEmail,
+  sendVerificationEmail,
+  signInEmail,
+} from "@/lib/firebase/auth-client";
 
 export function LoginPage() {
   const returnTo = useSafeReturnTo();
@@ -18,38 +19,60 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [mfaChallenge, setMfaChallenge] = useState(null);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   async function signIn(event) {
     event.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const result = getAppParams().appId
-        ? await loginWithMfa(email.trim(), password)
-        : await db.auth.loginViaEmailPassword({ email: email.trim(), password });
-      if (result?.mfa_required) {
-        setMfaChallenge(result);
+      const user = await signInEmail(email, password);
+      if (!user.emailVerified) {
+        await sendVerificationEmail(user);
+        setVerificationSent(true);
         return;
-      }
-      if (result?.access_token) db.auth.setToken(result.access_token);
-      if (!result?.access_token && !(await db.auth.isAuthenticated())) {
-        throw new Error("Sign-in did not establish a session. Please try again.");
       }
       window.location.assign(returnTo);
     } catch (signInError) {
-      setError(signInError?.message || "Unable to sign in. Check your email and password.");
+      setError(firebaseAuthErrorMessage(signInError));
+      setBusy(false);
+    } finally {
       setBusy(false);
     }
   }
 
-  if (mfaChallenge) {
-    return <MfaScreen><MfaFlow challenge={mfaChallenge} returnTo={returnTo} /></MfaScreen>;
+  async function resendVerification() {
+    setError("");
+    setBusy(true);
+    try {
+      await resendVerificationEmail();
+      setVerificationSent(true);
+    } catch (sendError) {
+      setError(firebaseAuthErrorMessage(sendError));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <AuthLayout icon={LogIn} title="Welcome back" description="Sign in to your OnionCare account.">
-      <GoogleButton returnTo={returnTo} onError={setError} disabled={busy} />
+      {verificationSent ? (
+        <p className="mb-4 rounded-md border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground" role="status">
+          Check your email for a verification link before continuing.{" "}
+          <button type="button" onClick={resendVerification} disabled={busy} className="font-medium text-primary underline disabled:opacity-60">
+            Resend link
+          </button>
+        </p>
+      ) : null}
+      <GoogleButton
+        returnTo={returnTo}
+        onError={setError}
+        onNeedsVerification={(address) => {
+          setEmail(address);
+          setVerificationSent(true);
+        }}
+        disabled={busy}
+      />
       <OrDivider />
       <AuthError message={error} />
       <form className="space-y-4" onSubmit={signIn}>

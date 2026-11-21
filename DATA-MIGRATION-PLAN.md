@@ -15,8 +15,7 @@ until backup, dry-run, credential verification and explicit approval are complet
 4. Verify backup readability and record project ID, timestamp and counts.
 5. Run a read-only inventory and produce `LEGACY-DATABASE-INVENTORY.md`.
 6. Run migrations only in dry-run mode and review:
-   - Firebase Auth account mapping
-   - legacy credential migration
+   - Firebase Auth UID/profile linking, without reading or reusing legacy passwords
    - additive report review fields
    - additive message read fields
    - media metadata
@@ -25,7 +24,9 @@ until backup, dry-run, credential verification and explicit approval are complet
 
 ## Authentication migration
 
-The legacy plaintext password field must not be copied into browser code or public storage. A
-server-side process should validate a legacy credential, migrate to a strong hash or authoritative
-identity workflow, create/resolve Firebase Auth UIDs, and issue custom tokens only after existing
-accounts are verified.
+The website authenticates only with Firebase Authentication. It must not read, validate, copy, hash,
+or reuse the legacy plaintext password field. Link a legacy profile/history to a Firebase Auth UID
+only after an owner-approved verification process that does not disclose the password; otherwise
+require Firebase account creation or password reset. Account role is assigned from trusted
+owner-controlled data, never from registration input. No UID links or production writes have been
+created.

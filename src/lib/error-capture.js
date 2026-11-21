@@ -1,6 +1,4 @@
-// Application managed file: error-capture v1. Keep it as it is, and keep both middlewares first in src/start.js;
-// Application replaces it with newer versions. Each reports the error to Application and rethrows it, and a 5xx response the
-// app returned goes out as it is, so what a visitor gets back is unchanged.
+// Keep error reporting first in the request and function middleware lists.
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import { createMiddleware } from "@tanstack/react-start";
 import { recordErrorResponse, recordFunctionError, recordRequestError } from "@/lib/error-capture.server";

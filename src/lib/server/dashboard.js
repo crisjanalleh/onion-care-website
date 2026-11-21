@@ -1,20 +1,19 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { createServerFn } from "@tanstack/react-start";
 import { requireUser } from "@/lib/auth-middleware";
-import { assertAdmin, requireProfile, resolveAdminForLocation } from "./shared";
+import { assertAdmin, requireProfile, resolveAdminForLocation, svc } from "./shared";
 
 export const farmerDashboard = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
     const database = context.getDatabase();
+    const entities = svc(context).entities;
     const profile = await requireProfile(context);
 
     const [diagnoses, reports, conversations, articles, assignment] = await Promise.all([
-      db.asServiceRole.entities.DiagnosisRecord.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 3 }),
-      db.asServiceRole.entities.DiseaseReport.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 3 }),
-      db.asServiceRole.entities.Conversation.filter({ farmerUid: profile.uid }),
-      db.asServiceRole.entities.ContentArticle.filter({ status: "published" }, { sort: "-lastReviewedAt", limit: 4 }),
+      entities.DiagnosisRecord.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 3 }),
+      entities.DiseaseReport.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 3 }),
+      entities.Conversation.filter({ farmerUid: profile.uid }),
+      entities.ContentArticle.filter({ status: "published" }, { sort: "-lastReviewedAt", limit: 4 }),
       resolveAdminForLocation(database, profile.location),
     ]);
 
@@ -38,7 +37,7 @@ export const adminDashboard = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
     assertAdmin(context.user);
-    const database = context.getDatabase();
+    const entities = svc(context).entities;
 
     const [
       farmerCount,
@@ -52,16 +51,16 @@ export const adminDashboard = createServerFn({ method: "GET" })
       byDisease,
       recentAudit,
     ] = await Promise.all([
-      db.entities.FarmerProfile.count({ role: "farmer" }),
-      db.entities.DiseaseReport.count({ status: "new" }),
-      db.entities.Conversation.filter({}, { sort: "-lastMessageAt", limit: 100 }),
-      db.entities.ContentArticle.count({ status: "pending_review" }),
-      db.entities.Disease.count({ contentStatus: "pending_review" }),
-      db.entities.TreatmentRecommendation.count({ approvalStatus: "pending_review" }),
-      db.asServiceRole.entities.FarmerProfile.filter({ role: "farmer" }, { sort: "-created_date", limit: 5 }),
-      db.entities.DiseaseReport.filter({}, { sort: "-created_date", limit: 5 }),
-      db.entities.DiseaseReport.aggregate({ query: {}, groupBy: "diseaseName" }),
-      db.entities.AuditLog.filter({}, { sort: "-created_date", limit: 6 }),
+      entities.FarmerProfile.count({ role: "farmer" }),
+      entities.DiseaseReport.count({ status: "new" }),
+      entities.Conversation.filter({}, { sort: "-lastMessageAt", limit: 100 }),
+      entities.ContentArticle.count({ status: "pending_review" }),
+      entities.Disease.count({ contentStatus: "pending_review" }),
+      entities.TreatmentRecommendation.count({ approvalStatus: "pending_review" }),
+      entities.FarmerProfile.filter({ role: "farmer" }, { sort: "-created_date", limit: 5 }),
+      entities.DiseaseReport.filter({}, { sort: "-created_date", limit: 5 }),
+      entities.DiseaseReport.aggregate({ query: {}, groupBy: "diseaseName" }),
+      entities.AuditLog.filter({}, { sort: "-created_date", limit: 6 }),
     ]);
 
     const threadList = conversations.items ?? conversations;
@@ -90,8 +89,7 @@ export const adminDashboard = createServerFn({ method: "GET" })
 export const myNotifications = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
-    const database = context.getDatabase();
-    const page = await db.entities.Notification.filter(
+    const page = await svc(context).entities.Notification.filter(
       { recipientUid: context.user.id },
       { sort: "-created_date", limit: 50 },
     );

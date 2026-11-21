@@ -1,5 +1,3 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { useCallback, useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ClipboardList, Loader2, Search } from "lucide-react";
@@ -9,7 +7,7 @@ import EmptyState from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { listReports } from "@/lib/server/reports";
+import { getDiseaseReportCounts, listReports } from "@/lib/server/reports";
 import { DISEASES, LOCATION_LABELS, REPORT_STATUSES } from "@/lib/domain/catalogue";
 import { formatDateTime } from "@/lib/format";
 
@@ -22,11 +20,12 @@ function ReportQueue() {
   const [filters, setFilters] = useState({ search: "", status: "", diseaseId: "", location: "" });
   const [state, setState] = useState({ loading: true, items: [], next: null, error: null });
   const [diseaseCounts, setDiseaseCounts] = useState([]);
+  const [diseaseCountsError, setDiseaseCountsError] = useState("");
 
   useEffect(() => {
-    db.entities.Disease.filter({}, { sort: "sortOrder", limit: 20 })
+    getDiseaseReportCounts()
       .then((page) => setDiseaseCounts(page.items ?? []))
-      .catch(() => setDiseaseCounts([]));
+      .catch((error) => setDiseaseCountsError(error?.message ?? "Unable to load disease report counts."));
   }, []);
 
   const load = useCallback(
@@ -68,6 +67,7 @@ function ReportQueue() {
         description="Opening a report does not clear its new count. A report stops counting as new only when its status actually changes."
       />
 
+      {diseaseCountsError ? <p className="mb-4 text-sm text-destructive">{diseaseCountsError}</p> : null}
       <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {DISEASES.map((disease) => {
           const record = diseaseCounts.find((item) => item.diseaseId === disease.id);

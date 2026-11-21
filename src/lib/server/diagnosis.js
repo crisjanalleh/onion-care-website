@@ -1,18 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
-import { getDb } from "@/lib/appDatabase";
 import { DISEASE_BY_ID } from "@/lib/domain/catalogue";
 import { evaluateDiagnosis } from "@/lib/domain/diagnosis";
-import { fail, requireProfile } from "./shared";
+import { fail, requireProfile, svc } from "./shared";
 
 /**
  * Saved symptom-checklist assessments. The rules live in `@/lib/domain/diagnosis`:
  * the server re-runs them rather than trusting the browser's copy, so a stored
  * record always names the ruleset that produced it.
  */
-
-const serviceEntities = () => getDb().asServiceRole?.entities ?? getDb().entities;
 
 export const saveDiagnosis = createServerFn({ method: "POST" })
   .middleware([requireUser])
@@ -27,6 +24,7 @@ export const saveDiagnosis = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const profile = await requireProfile(context);
+    const entities = svc(context).entities;
     const result = evaluateDiagnosis(data.symptomCategory, data.selectedSymptoms);
 
     if (result.resultType === "no_match") {
@@ -36,7 +34,7 @@ export const saveDiagnosis = createServerFn({ method: "POST" })
     const leadId = result.candidateDiseaseIds[0] ?? null;
     const occurredAt = new Date().toISOString();
 
-    const record = await serviceEntities().DiagnosisRecord.create({
+    const record = await entities.DiagnosisRecord.create({
       farmerUid: profile.uid,
       farmerUsername: profile.username,
       name: profile.name,
@@ -65,8 +63,8 @@ export const getDiagnosis = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ diagnosisId: z.string() }))
   .handler(async ({ data, context }) => {
-    const entities = serviceEntities();
-    const record = await entities.DiagnosisRecord.get(data.diagnosisId).catch(() => null);
+    const entities = svc(context).entities;
+    const record = await entities.DiagnosisRecord.get(data.diagnosisId);
     if (!record) throw fail("That diagnosis could not be found.", 404);
     if (record.farmerUid !== context.user.id && context.user.role !== "admin") {
       throw fail("You do not have access to this record.", 403);

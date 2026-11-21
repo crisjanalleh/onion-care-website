@@ -1,5 +1,3 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, ImageOff, Loader2, MessagesSquare } from "lucide-react";
@@ -11,6 +9,7 @@ import { Image } from "@/components/ui/image";
 
 import { PESTS } from "@/lib/domain/catalogue";
 import { formatDate } from "@/lib/format";
+import { getPublishedPest } from "@/lib/server/content";
 
 export const Route = createFileRoute("/_authed/_farmer/library/pests/$pestId")({
   component: PestDetail,
@@ -24,8 +23,8 @@ function PestDetail() {
 
   useEffect(() => {
     let active = true;
-    db.entities.Pest.filter({ pestId }, { limit: 1 })
-      .then((page) => active && setState({ loading: false, pest: (page.items ?? [])[0] ?? null, error: null }))
+    getPublishedPest({ data: { pestId } })
+      .then((pest) => active && setState({ loading: false, pest, error: null }))
       .catch((error) => active && setState({ loading: false, pest: null, error: error?.message ?? "Unable to load this pest." }));
     return () => {
       active = false;
@@ -64,6 +63,7 @@ function PestDetail() {
           <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </p>
       ) : null}
+      {state.error ? <p className="mb-4 text-sm text-destructive">{state.error}</p> : null}
 
       <div className="grid gap-5 sm:grid-cols-2">
         <section className="rounded-lg border border-border bg-card p-5">

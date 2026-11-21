@@ -1,8 +1,4 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
-// Application managed file: error-capture v1. Keep it as it is, and keep it as `main` in wrangler.jsonc; Application
-// replaces it with newer versions. The Worker's entry: TanStack Start's default one, which also reports a
-// page's loader and beforeLoad errors to db. What a visitor gets back is unchanged.
+// Cloudflare Worker entry for TanStack Start. Wrangler points to this file.
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { recordRouteError } from "@/lib/error-capture.server";
 

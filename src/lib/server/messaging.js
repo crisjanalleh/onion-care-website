@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
-import { getDb } from "@/lib/appDatabase";
 import { assertAdmin, fail, resolveAdminForLocation, requireProfile, svc, writeAudit } from "./shared";
 
 /**
@@ -9,8 +8,6 @@ import { assertAdmin, fail, resolveAdminForLocation, requireProfile, svc, writeA
  * by the administrator assigned to the farmer's location; a farmer who has no
  * assigned administrator still gets a thread, marked as a support fallback.
  */
-
-const serviceEntities = () => getDb().asServiceRole?.entities ?? getDb().entities;
 
 const now = () => new Date().toISOString();
 
@@ -44,7 +41,7 @@ async function findOrCreateThread(context, profile) {
 export const myThreadSummary = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
-    const threads = await serviceEntities().Conversation.filter({ farmerUid: context.user.id });
+    const threads = await svc(context).entities.Conversation.filter({ farmerUid: context.user.id });
     const unread = threads.reduce((total, thread) => total + (thread.unreadCountForFarmer ?? 0), 0);
     return { unread };
   });
@@ -57,7 +54,7 @@ export const myConversation = createServerFn({ method: "GET" })
     const conversation = await findOrCreateThread(context, profile);
 
     const admin = conversation.adminUid
-      ? (await serviceEntities().FarmerProfile.filter({ uid: conversation.adminUid }))[0] ?? null
+      ? (await svc(context).entities.FarmerProfile.filter({ uid: conversation.adminUid }))[0] ?? null
       : null;
 
     return { conversation, admin };
@@ -68,7 +65,10 @@ export const listConversations = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
     assertAdmin(context.user);
-    const threads = await serviceEntities().Conversation.filter({}, { sort: "-lastMessageAt", limit: 100 });
+    const threads = await svc(context).entities.Conversation.filter(
+      { adminUid: context.user.id },
+      { sort: "-lastMessageAt", limit: 100 },
+    );
     return { conversations: threads };
   });
 
@@ -76,13 +76,11 @@ export const getConversation = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ conversationId: z.string() }))
   .handler(async ({ data, context }) => {
-    const conversation = await serviceEntities().Conversation.get(data.conversationId).catch(() => null);
+    const conversation = await svc(context).entities.Conversation.get(data.conversationId);
     if (!conversation) throw fail("That conversation could not be found.", 404);
 
-    const isMember =
-      conversation.farmerUid === context.user.id ||
-      conversation.adminUid === context.user.id ||
-      context.user.role === "admin";
+    const isMember = conversation.farmerUid === context.user.id ||
+      (context.user.role === "admin" && conversation.adminUid === context.user.id);
     if (!isMember) throw fail("You do not have access to this conversation.", 403);
 
     return { conversation };
@@ -99,7 +97,27 @@ export const startConversationWithFarmer = createServerFn({ method: "POST" })
     if (!farmer) throw fail("That farmer could not be found.", 404);
 
     const existing = await entities.Conversation.filter({ farmerUsername: farmer.username });
-    if (existing[0]) return { conversation: existing[0] };
+    if (existing[0]) {
+      if (!existing[0].adminUid) {
+        const assigned = await entities.Conversation.update(existing[0].id, {
+          adminUid: context.user.id,
+          adminUsername: context.user.email,
+          assignmentSource: "manual_assignment",
+        });
+        await writeAudit(context.getDatabase(), {
+          actor: context.user,
+          action: "conversation_assigned",
+          entityType: "Conversation",
+          entityId: existing[0].id,
+          after: { adminUid: context.user.id },
+        });
+        return { conversation: assigned };
+      }
+      if (existing[0].adminUid !== context.user.id) {
+        throw fail("That conversation is assigned to another administrator.", 403);
+      }
+      return { conversation: existing[0] };
+    }
 
     const conversation = await entities.Conversation.create({
       farmerUid: farmer.uid,
@@ -136,13 +154,11 @@ export const listMessages = createServerFn({ method: "POST" })
   .validator(z.object({ conversationId: z.string() }))
   .handler(async ({ data, context }) => {
     const entities = svc(context).entities;
-    const conversation = await entities.Conversation.get(data.conversationId).catch(() => null);
+    const conversation = await entities.Conversation.get(data.conversationId);
     if (!conversation) throw fail("That conversation could not be found.", 404);
 
-    const isMember =
-      conversation.farmerUid === context.user.id ||
-      conversation.adminUid === context.user.id ||
-      context.user.role === "admin";
+    const isMember = conversation.farmerUid === context.user.id ||
+      (context.user.role === "admin" && conversation.adminUid === context.user.id);
     if (!isMember) throw fail("You do not have access to this conversation.", 403);
 
     const messages = await entities.Message.filter(
@@ -158,10 +174,10 @@ export const sendMessage = createServerFn({ method: "POST" })
   .validator(z.object({ conversationId: z.string(), body: z.string().min(1).max(4000) }))
   .handler(async ({ data, context }) => {
     const entities = svc(context).entities;
-    const conversation = await entities.Conversation.get(data.conversationId).catch(() => null);
+    const conversation = await entities.Conversation.get(data.conversationId);
     if (!conversation) throw fail("That conversation could not be found.", 404);
 
-    const asAdmin = conversation.adminUid === context.user.id || context.user.role === "admin";
+    const asAdmin = context.user.role === "admin" && conversation.adminUid === context.user.id;
     const isFarmer = conversation.farmerUid === context.user.id;
     if (!asAdmin && !isFarmer) throw fail("You do not have access to this conversation.", 403);
 
@@ -196,10 +212,12 @@ export const markConversationRead = createServerFn({ method: "POST" })
   .validator(z.object({ conversationId: z.string() }))
   .handler(async ({ data, context }) => {
     const entities = svc(context).entities;
-    const conversation = await entities.Conversation.get(data.conversationId).catch(() => null);
+    const conversation = await entities.Conversation.get(data.conversationId);
     if (!conversation) throw fail("That conversation could not be found.", 404);
 
-    const asAdmin = conversation.adminUid === context.user.id || context.user.role === "admin";
+    const asAdmin = context.user.role === "admin" && conversation.adminUid === context.user.id;
+    const isFarmer = conversation.farmerUid === context.user.id;
+    if (!asAdmin && !isFarmer) throw fail("You do not have access to this conversation.", 403);
     const updated = await entities.Conversation.update(conversation.id, {
       ...(asAdmin
         ? { unreadCountForAdmin: 0, newMessageCount: 0, hasNewMessage: false }

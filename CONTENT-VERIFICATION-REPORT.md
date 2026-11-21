@@ -3,7 +3,9 @@
 **Audit date:** 2026-11-21  
 **Build revision:** `04f4f0dd85ff2ef3c58e39da1d9c6170e80444c0`  
 **Audit mode:** Read-only content audit. No application content, diagnosis logic, images, database records, or security rules were changed.  
-**Overall status:** **INCOMPLETE / NOT ACCEPTED** — farmer and admin routes require authentication that is unavailable in the local preview, the educational pages are mostly empty or placeholders in source, and live Firebase values and media records remain unverified.
+**Overall status at the audited revision:** **INCOMPLETE / NOT ACCEPTED** — farmer and admin routes required authentication that was unavailable in the local preview, the educational pages were mostly empty or placeholders in source, and live Firebase values and media records remained unverified.
+
+**Post-audit implementation note:** The findings below describe the audited build revision only and have not been re-audited after the standalone Firebase integration. Firebase Authentication, the Cloudflare data adapter, and the admin media upload/review flow have since been implemented and tested against local emulators. Live Firebase access and the broader content findings remain unverified; see [FIREBASE-CONNECTION-STATUS.md](./FIREBASE-CONNECTION-STATUS.md) for current backend status.
 
 ## 1. Executive summary
 
@@ -38,9 +40,9 @@ The primary blockers are:
 - **Reference:** `OnionCare_Original_Content_Reference.md`, 916 lines on disk; source-derived packaged text, hardcoded Java output, Firestore field names, resource-only strings, and legacy behavior are kept distinct in Appendix A.
 - **Website revision:** `04f4f0dd85ff2ef3c58e39da1d9c6170e80444c0`. The worktree was already dirty before this audit; the audit added only this report.
 - **Rendered preview:** Vite 8.3.8 at `http://127.0.0.1:5173/`. The public home and `/about` rendered. The browser snapshot on `/` showed the hero, “How it works,” “What you can look up,” administrator, and About sections. A narrow viewport request produced CSS dimensions 487×1055 with document width 468; the desktop request produced 1800×1125 with document width 1781. Neither tested viewport had horizontal document overflow.
-- **Protected-route evidence:** Direct navigation to `/library/diseases` redirected to `/login?returnTo=%2Flibrary%2Fdiseases&from_url=%2Flibrary%2Fdiseases`. `/admin/content` likewise redirected to login. This agrees with the local preview's anonymous `auth.isAuthenticated()` / `auth.me()` behavior in [`src/lib/appDatabase.js`](./src/lib/appDatabase.js) and the farmer/admin guards in [`src/routes/_authed/_farmer.jsx`](./src/routes/_authed/_farmer.jsx) and [`src/routes/_authed/_admin.jsx`](./src/routes/_authed/_admin.jsx).
+- **Protected-route evidence at the audited revision:** Direct navigation to `/library/diseases` redirected to `/login?returnTo=%2Flibrary%2Fdiseases&from_url=%2Flibrary%2Fdiseases`. `/admin/content` likewise redirected to login. The anonymous preview behavior was recorded before Firebase Authentication was integrated.
 - **Screenshot evidence:** An integrated-browser screenshot of the narrow public home was captured during the audit. It is not persisted as a project file. Reproduce with `npm run dev`, open `/`, and inspect at a narrow viewport. Protected-page screenshots could not be collected because of the login redirect.
-- **Firebase:** [`FIREBASE-CONNECTION-STATUS.md`](./FIREBASE-CONNECTION-STATUS.md) reports absent ADC/project environment variables, a 403 for the legacy project, no website Firebase web configuration, and no Firebase data access. This audit performed no Firebase reads or writes.
+- **Firebase at the audited revision:** [`FIREBASE-CONNECTION-STATUS.md`](./FIREBASE-CONNECTION-STATUS.md) recorded absent ADC/project environment variables, a 403 for the legacy project, no website Firebase web configuration, and no Firebase data access. This audit performed no Firebase reads or writes.
 - **No content edits or live-data changes were made.**
 
 ## 3. Routes and interfaces inspected
@@ -60,7 +62,7 @@ These routes were inspected in source; none of their protected content was visua
 
 [`content.index`](./src/routes/_authed/_admin/admin/content.index.jsx), [`content.articles.$contentType`](./src/routes/_authed/_admin/admin/content.articles.$contentType.jsx), [`content.diseases`](./src/routes/_authed/_admin/admin/content.diseases.jsx), [`content.pests`](./src/routes/_authed/_admin/admin/content.pests.jsx), [`content.legacy-info`](./src/routes/_authed/_admin/admin/content.legacy-info.jsx), [`content.recommendations`](./src/routes/_authed/_admin/admin/content.recommendations.jsx), and [`media`](./src/routes/_authed/_admin/admin/media.jsx).
 
-These routes were inspected in source; none was visually accessible in the anonymous preview. The admin content hub and editor depend on the injected application database, not on live Firebase reads in this environment.
+These routes were inspected in source; none was visually accessible in the anonymous preview at audit time. The admin content hub and editor used the injected application database in the audited revision, not live Firebase reads.
 
 ## 4. Page-by-page findings
 
@@ -149,7 +151,7 @@ The reference's English-only Black Mold literals and the mismatch between `white
 
 ## 10. Dynamic Firestore comparison
 
-**Retrieval status for every row below: `PENDING LIVE DATA`.** The live document `information/info_section` was not retrieved. The website has no configured Firebase web client in this environment; its content routes use the injected application database. The static English resource text in the reference is not treated as live Firestore data.
+**Retrieval status for every row below at audit time: `PENDING LIVE DATA`.** The live document `information/info_section` was not retrieved. The website had no configured Firebase web client in the audited environment; its content routes used the injected application database. The static English resource text in the reference is not treated as live Firestore data.
 
 | Firestore path | Field | Website section | Retrieval / comparison |
 |---|---|---|---|

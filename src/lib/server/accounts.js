@@ -1,18 +1,16 @@
-const db = globalThis.__APP_DB__ || { auth:{ isAuthenticated: async()=>false, me: async()=>null }, entities:new Proxy({}, { get:()=>({ filter:async()=>[], get:async()=>null, create:async()=>({}), update:async()=>({}), delete:async()=>({}) }) }), integrations:{ Core:{ UploadFile:async()=>({ file_url:'' }) } } };
-
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 import { canonicalLocation, normalizeLocationKey } from "@/lib/domain/catalogue-lookup";
-import { legacyTimestamp, normalizePhone, normalizeUsername } from "@/lib/format";
-import { assertAdmin, fail, getProfileForUser, requireProfile, resolveAdminForLocation, svc, writeAudit } from "./shared";
+import { normalizePhone, normalizeUsername } from "@/lib/format";
+import { assertAdmin, fail, getProfileForUser, requireProfile, resolveAdminForLocation, svc, toPage, writeAudit } from "./shared";
 
 const PHONE = /^09\d{9}$/;
 const USERNAME = /^[a-z0-9_]{3,24}$/;
 
 export const getMyContext = createServerFn({ method: "GET" })
-  .middleware([requireUser])
   .handler(async ({ context }) => {
+    if (!context.user) return { user: null, profile: null };
     const profile = await getProfileForUser(context.getDatabase(), context.user.id);
     return {
       user: {
@@ -42,6 +40,7 @@ export const registerFarmerProfile = createServerFn({ method: "POST" })
 
     const existing = await getProfileForUser(database, user.id);
     if (existing) return { profile: existing, created: false };
+    if (user.role !== "farmer") throw fail("Administrator accounts do not use farmer registration.", 403);
 
     const name = data.name.trim().replace(/\s+/g, " ");
     if (name.length < 10 || name.length > 50) throw fail("Enter your full name (10 to 50 characters).");
@@ -57,28 +56,62 @@ export const registerFarmerProfile = createServerFn({ method: "POST" })
     const location = canonicalLocation(data.location);
     if (!location) throw fail("Choose one of the registered service locations.");
 
-    const usernameTaken = await db.asServiceRole.entities.FarmerProfile.filter({ username });
+    const entities = svc(context).entities;
+    const [usernameTaken, usernameReservation, numberTaken, numberReservation] = await Promise.all([
+      entities.FarmerProfile.filter({ username }),
+      database.entities.usernameReservations.get(username),
+      entities.FarmerProfile.filter({ number }),
+      database.entities.phoneReservations.get(number),
+    ]);
     if (usernameTaken.length > 0) throw fail("That username is already registered. Try another one.");
-
-    const numberTaken = await db.asServiceRole.entities.FarmerProfile.filter({ number });
     if (numberTaken.length > 0) throw fail("That mobile number is already registered. Contact your administrator if this is unexpected.");
+    if (usernameReservation) throw fail("That username is already registered. Try another one.");
+    if (numberReservation) throw fail("That mobile number is already registered. Contact your administrator if this is unexpected.");
 
-    const profile = await db.asServiceRole.entities.FarmerProfile.create({
-      username,
-      name,
-      number,
-      sex: data.sex || null,
-      location,
-      uid: user.id,
-      role: "farmer",
-      isAdmin: false,
-      status: "active",
-      credentialVersion: 2,
-      profileSchemaVersion: 2,
-      lastLoginAt: new Date().toISOString(),
-      language: "en",
-      legacyPath: `users/${username}`,
-    });
+    const existingAccount = await entities.User.get(user.id);
+    if (existingAccount?.role === "admin") throw fail("Administrator accounts do not use farmer registration.", 403);
+    if (!existingAccount) {
+      await entities.User.create({
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        role: "farmer",
+        status: "active",
+      });
+    }
+
+    let profile;
+    try {
+      profile = await database.createWithUniqueKeys({
+        entity: "FarmerProfile",
+        id: user.id,
+        data: {
+          username,
+          name,
+          number,
+          sex: data.sex || null,
+          location,
+          uid: user.id,
+          role: "farmer",
+          isAdmin: false,
+          status: "active",
+          credentialVersion: 2,
+          profileSchemaVersion: 2,
+          lastLoginAt: new Date().toISOString(),
+          language: "en",
+          legacyPath: `users/${username}`,
+        },
+        uniqueKeys: [
+          { collection: "usernameReservations", id: username, field: "username", value: username },
+          { collection: "phoneReservations", id: number, field: "number", value: number },
+        ],
+      });
+    } catch (error) {
+      if (error?.code === "UNIQUE_VALUE_CONFLICT") {
+        throw fail("That username or mobile number was just registered. Check the details and try again.", 409);
+      }
+      throw error;
+    }
 
     return { profile, created: true };
   });
@@ -127,12 +160,12 @@ export const listFarmers = createServerFn({ method: "POST" })
         { number: { $regex: term, $options: "i" } },
       ];
     }
-    const page = await context.getDatabase().entities.FarmerProfile.filter(query, {
+    const page = await svc(context).entities.FarmerProfile.filter(query, {
       sort: "-created_date",
       limit: data.limit ?? 25,
       ...(data.cursor ? { cursor: data.cursor } : {}),
     });
-    return page;
+    return toPage(page);
   });
 
 export const getFarmerDetail = createServerFn({ method: "POST" })
@@ -140,15 +173,15 @@ export const getFarmerDetail = createServerFn({ method: "POST" })
   .validator(z.object({ username: z.string() }))
   .handler(async ({ data, context }) => {
     assertAdmin(context.user);
-    const database = context.getDatabase();
-    const rows = await db.asServiceRole.entities.FarmerProfile.filter({ username: data.username });
+    const entities = svc(context).entities;
+    const rows = await entities.FarmerProfile.filter({ username: data.username });
     const profile = rows[0];
     if (!profile) throw fail("That farmer could not be found.", 404);
 
     const [diagnoses, reports, assignment] = await Promise.all([
-      db.asServiceRole.entities.DiagnosisRecord.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 5 }),
-      db.asServiceRole.entities.DiseaseReport.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 5 }),
-      db.asServiceRole.entities.AdminAssignment.filter({ locationKey: normalizeLocationKey(profile.location) }),
+      entities.DiagnosisRecord.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 5 }),
+      entities.DiseaseReport.filter({ farmerUid: profile.uid }, { sort: "-created_date", limit: 5 }),
+      entities.AdminAssignment.filter({ locationKey: normalizeLocationKey(profile.location) }),
     ]);
 
     return {
@@ -163,9 +196,9 @@ export const listAdminAssignments = createServerFn({ method: "GET" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
     assertAdmin(context.user);
-    const database = context.getDatabase();
-    const assignments = await db.entities.AdminAssignment.filter({}, { sort: "locationKey", limit: 50 });
-    const admins = await db.entities.User.list();
+    const entities = svc(context).entities;
+    const assignments = await entities.AdminAssignment.filter({}, { sort: "locationKey", limit: 50 });
+    const admins = await entities.User.list();
     return {
       assignments: assignments.items ?? assignments,
       admins: admins
@@ -180,16 +213,17 @@ export const updateAssignment = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     assertAdmin(context.user);
     const database = context.getDatabase();
-    const rows = await db.entities.AdminAssignment.filter({ locationKey: data.locationKey });
+    const entities = svc(context).entities;
+    const rows = await entities.AdminAssignment.filter({ locationKey: data.locationKey });
     const assignment = rows[0];
     if (!assignment) throw fail("That location is not in the directory.", 404);
 
-    const admins = await db.entities.User.list();
+    const admins = await entities.User.list();
     const admin = admins.find((u) => u.id === data.adminUid && u.role === "admin");
     if (!admin) throw fail("Choose an existing administrator account.", 400);
 
     const before = { adminUid: assignment.adminUid, active: assignment.active };
-    const updated = await db.entities.AdminAssignment.update(assignment.id, {
+    const updated = await entities.AdminAssignment.update(assignment.id, {
       adminUid: admin.id,
       adminUsername: assignment.adminUsername,
       active: true,
@@ -222,6 +256,6 @@ export const touchLastLogin = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const profile = await getProfileForUser(context.getDatabase(), context.user.id);
     if (!profile) return { ok: false };
-    await svc(context).entities.FarmerProfile.update(profile.id, { lastLoginAt: legacyTimestamp() });
+    await svc(context).entities.FarmerProfile.update(profile.id, { lastLoginAt: new Date().toISOString() });
     return { ok: true };
   });

@@ -32,4 +32,14 @@ Display labels may change, but these keys and parent paths must remain unchanged
 
 `users/{username}.password` and `farmers/{username}.password` must never be fetched by browser code,
 rendered, cached or logged. The current implementation must not validate credentials directly in
-Firestore. The future login exchange belongs in a server-only, Firebase Admin-backed process.
+Firestore. Website sign-in uses Firebase Authentication, not the legacy Firestore password field.
+Legacy accounts can be linked only after an owner-approved identity verification process; otherwise
+the user must create/reset credentials through Firebase Authentication. Never import or reuse the
+legacy plaintext password.
+
+## Website data model
+
+The implemented target website collections, timestamp convention, account-role boundary, and safe compatibility
+rules are defined in [FIREBASE-WEBSITE-SCHEMA.md](./FIREBASE-WEBSITE-SCHEMA.md). Legacy paths remain
+read-only until a backup, dry run, and explicit owner approval are complete. Live presence and field
+shapes remain unverified.
