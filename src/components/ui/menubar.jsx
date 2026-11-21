@@ -1,23 +1,5 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export function Menubar({ children }) { return <nav>{children}</nav>; }
+export function MenubarMenu({ children }) { return <div>{children}</div>; }
+export function MenubarTrigger({ children }) { return <button type="button">{children}</button>; }
+export function MenubarContent({ children }) { return <div>{children}</div>; }
+export function MenubarItem({ children }) { return <button type="button">{children}</button>; }

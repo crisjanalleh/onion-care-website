@@ -35,23 +35,33 @@ export const authQuery = queryOptions({
   retry: false,
 });
 
-const AuthContext = createContext({ user: null, logout: () => {} });
+const AuthContext = createContext({
+  user: null,
+  isAuthenticated: false,
+  isLoadingAuth: true,
+  navigateToLogin: () => {},
+  logout: async () => {},
+});
 
 function AuthState({ children }) {
   const client = useQueryClient();
-  const { data } = useQuery(authQuery);
+  const { data, isPending } = useQuery(authQuery);
 
   const logout = useCallback(async () => {
-    try {
-      await db.auth.logout?.();
-    } catch {
-      // A failed sign-out still clears the local session.
-    }
+    await db.auth.logout?.();
     client.clear();
     if (typeof window !== "undefined") window.location.assign("/login");
   }, [client]);
 
-  const value = useMemo(() => ({ user: data?.user ?? null, logout }), [data?.user, logout]);
+  const navigateToLogin = useCallback(() => {
+    if (typeof window !== "undefined") window.location.assign("/login");
+  }, []);
+
+  const user = data?.user ?? null;
+  const value = useMemo(
+    () => ({ user, isAuthenticated: Boolean(user), isLoadingAuth: isPending, navigateToLogin, logout }),
+    [user, isPending, navigateToLogin, logout],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

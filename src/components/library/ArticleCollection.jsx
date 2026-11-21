@@ -1,23 +1,3 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export default function ArticleCollection({ articles = [] }) {
+  return <div className="grid gap-4">{articles.length ? articles.map((article, index) => <article key={article.id ?? index} className="rounded-xl border p-4"><h2 className="font-semibold">{article.title}</h2>{article.summary ? <p className="mt-2 text-sm text-muted-foreground">{article.summary}</p> : null}</article>) : <p className="text-sm text-muted-foreground">No articles available.</p>}</div>;
+}

@@ -1,23 +1,4 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+import { createFileRoute } from "@tanstack/react-router";
+import PageHeader from "@/components/common/PageHeader";
+export const Route = createFileRoute("/_authed/_farmer/history/")({ component: HistoryPage });
+function HistoryPage() { return <main className="p-6"><PageHeader title="Diagnosis history" description="Existing records will appear after live Firebase access is available." /></main>; }

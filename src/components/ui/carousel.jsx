@@ -1,23 +1,5 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export function Carousel({ children }) { return <div>{children}</div>; }
+export function CarouselContent({ children }) { return <div className="flex overflow-hidden">{children}</div>; }
+export function CarouselItem({ children }) { return <div className="min-w-full">{children}</div>; }
+export function CarouselPrevious({ children = "Previous" }) { return <button type="button">{children}</button>; }
+export function CarouselNext({ children = "Next" }) { return <button type="button">{children}</button>; }

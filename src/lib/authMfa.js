@@ -48,6 +48,7 @@ export async function loginWithSocial(provider, returnTo) {
   const url = new URL("/auth/mfa", window.location.origin);
   url.search = new URLSearchParams({ app_id: appId(), oauth_start: provider, from_url: returnTo });
   window.location.assign(url.href);
+  return { redirecting: true };
 }
 
 export function loginWithGoogle(returnTo) {

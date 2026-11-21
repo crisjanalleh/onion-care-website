@@ -1,23 +1,3 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export default function DiagnosisResultView({ result }) {
+  return <section className="rounded-xl border bg-card p-5"><h2 className="text-xl font-semibold">{result?.diseaseName ?? "Diagnosis result"}</h2>{result?.description ? <p className="mt-3 text-sm text-muted-foreground">{result.description}</p> : null}</section>;
+}

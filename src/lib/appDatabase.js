@@ -4,10 +4,9 @@
  * The application injects `__APP_DB__`, `createClientFromRequest` and
  * `getAccessToken` into every app at runtime, and the app's middleware and data
  * helpers are written against them. Outside the application — under `npm run dev` —
- * those globals do not exist, so this module installs an in-memory equivalent:
- * one signed-in local visitor, their profile and the location assignment that
- * points at them. A read that finds nothing returns an empty value rather than
- * throwing, so every screen still renders.
+ * those globals do not exist, so this module installs an in-memory preview
+ * database with sample records. It deliberately has no authenticated visitor:
+ * local preview must not bypass the route or server-function auth checks.
  *
  * On a configured application runtime, injected globals take precedence and this local fallback is
  * not used.
@@ -16,7 +15,6 @@ import { LOCATIONS } from "@/lib/domain/catalogue";
 import { normalizeLocationKey } from "@/lib/format";
 
 const ROLE_KEY = "onioncare:local-role";
-const SIGNED_OUT_KEY = "onioncare:local-signed-out";
 const TOKEN_KEY = "onioncare_access_token";
 
 const LOCAL_UID = "local-user";
@@ -208,43 +206,29 @@ const serviceEntities = new Proxy(
   },
 );
 
-function isSignedOut() {
-  return readStorage(SIGNED_OUT_KEY) === "1";
+function unavailableAuth() {
+  throw new Error("Authentication is not configured for local development. Connect the application's authentication service to continue.");
 }
 
 const localDb = {
   auth: {
     async isAuthenticated() {
-      return !isSignedOut();
+      return false;
     },
     async me() {
-      return isSignedOut() ? null : buildUser(localRole());
+      return null;
     },
     async logout() {
-      writeStorage(SIGNED_OUT_KEY, "1");
       writeStorage(TOKEN_KEY, null);
     },
     setToken(token) {
       writeStorage(TOKEN_KEY, token);
     },
-    loginWithProvider() {
-      writeStorage(SIGNED_OUT_KEY, null);
-      return { ok: true };
-    },
-    async loginViaEmailPassword() {
-      writeStorage(SIGNED_OUT_KEY, null);
-      return { access_token: "local-token" };
-    },
-    async register() {
-      return { ok: true };
-    },
-    async verifyOtp() {
-      writeStorage(SIGNED_OUT_KEY, null);
-      return { access_token: "local-token" };
-    },
-    async resendOtp() {
-      return { ok: true };
-    },
+    loginWithProvider: unavailableAuth,
+    loginViaEmailPassword: unavailableAuth,
+    register: unavailableAuth,
+    verifyOtp: unavailableAuth,
+    resendOtp: unavailableAuth,
   },
   entities: localEntities,
   asServiceRole: { entities: serviceEntities },

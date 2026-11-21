@@ -1,23 +1,5 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export function Breadcrumb({ children }) { return <nav aria-label="Breadcrumb">{children}</nav>; }
+export function BreadcrumbList({ children }) { return <ol className="flex items-center gap-2">{children}</ol>; }
+export function BreadcrumbItem({ children }) { return <li className="flex items-center gap-2">{children}</li>; }
+export function BreadcrumbLink({ children, ...props }) { return <a {...props}>{children}</a>; }
+export function BreadcrumbSeparator() { return <span aria-hidden="true">/</span>; }

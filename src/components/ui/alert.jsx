@@ -1,23 +1,3 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export function Alert({ children, className = "" }) { return <div role="alert" className={`rounded-lg border p-4 ${className}`}>{children}</div>; }
+export function AlertTitle({ children }) { return <h3 className="font-semibold">{children}</h3>; }
+export function AlertDescription({ children }) { return <div className="text-sm text-muted-foreground">{children}</div>; }

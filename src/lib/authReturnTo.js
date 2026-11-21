@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 // Post-auth destination, shared by the auth pages and the MCP consent page.
 // Keep the check in one place — it is security-sensitive.
 //
@@ -17,6 +19,14 @@ export function safeReturnTo(search) {
   if (typeof window === "undefined") return "/";
   const params = new URLSearchParams(search ?? window.location.search);
   return sanitizeReturnTo(params.get("returnTo") || params.get("from_url"));
+}
+
+export function useSafeReturnTo() {
+  const [returnTo, setReturnTo] = useState("/");
+  useEffect(() => {
+    setReturnTo(safeReturnTo());
+  }, []);
+  return returnTo;
 }
 
 export function sanitizeReturnTo(raw) {

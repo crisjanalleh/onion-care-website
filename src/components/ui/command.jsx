@@ -1,23 +1,6 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export function Command({ children, className = "" }) { return <div className={className}>{children}</div>; }
+export function CommandEmpty({ children }) { return <div className="p-3 text-sm text-muted-foreground">{children}</div>; }
+export function CommandGroup({ children }) { return <div>{children}</div>; }
+export function CommandInput(props) { return <input className="h-10 w-full border-b px-3 text-sm" {...props} />; }
+export function CommandItem({ children, ...props }) { return <button type="button" className="w-full px-3 py-2 text-left text-sm" {...props}>{children}</button>; }
+export function CommandList({ children }) { return <div>{children}</div>; }

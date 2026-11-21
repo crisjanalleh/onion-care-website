@@ -7,7 +7,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "audit:firebase": "node scripts/legacy-firebase-audit.mjs"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.2.1",
@@ -29,6 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "firebase-admin": "^14.5.1",
     "input-otp": "^1.5.0",
     "lucide-react": "^1.77.0",
     "next-themes": "^0.4.6",

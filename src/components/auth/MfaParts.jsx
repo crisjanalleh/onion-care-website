@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { loadSignInOptions } from "@/lib/authMfaFlow";
-import { safeReturnTo } from "@/lib/authReturnTo";
+import { useSafeReturnTo } from "@/lib/authReturnTo";
 
 // Building blocks shared by MfaFlow, MfaMethodSetup and MfaManage.
 
@@ -209,8 +209,8 @@ export function CopyKeyButton({ text, wide = false }) {
 // (signInPath "/mfa" for factor management, whose sign-in lives on that page). The server's
 // wording for that case already says "sign in again", so it is replaced, not repeated.
 export function MfaNotice({ error, signInPath = "/login" }) {
+  const returnTo = useSafeReturnTo();
   if (!error) return null;
-  const returnTo = safeReturnTo();
   return (
     <div role="alert" className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm text-center">
       {error.mustSignInAgain ? (

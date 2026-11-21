@@ -1,23 +1,3 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export default function NotificationsList({ notifications = [] }) {
+  return <div className="space-y-3">{notifications.length ? notifications.map((item, index) => <div key={item.id ?? index} className="rounded-lg border p-3"><p className="font-medium">{item.title}</p>{item.body ? <p className="text-sm text-muted-foreground">{item.body}</p> : null}</div>) : <p className="text-sm text-muted-foreground">No notifications.</p>}</div>;
+}

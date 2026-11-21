@@ -1,23 +1,3 @@
-mediaAssets/
-  {assetId}
-    storagePath: string
-    downloadURL: string | optional
-    fileName: string
-    contentType: string
-    category: string
-    altText: string
-    caption: string | optional
-    source: string | optional
-    license: string | optional
-    origin: "legacy" | "illustrative" | "external_source" | "admin_upload"
-    diseaseKey: string | optional
-    verificationStatus: "verified" | "needs_review" | "not_applicable"
-    verifiedByUid: string | optional
-    verifiedAt: timestamp | optional
-    width: number | optional
-    height: number | optional
-    fileSizeBytes: number | optional
-    checksum: string | optional
-    isActive: boolean
-    createdAt: timestamp
-    updatedAt: timestamp
+export function Avatar({ children, className = "" }) { return <div className={`relative inline-flex size-10 overflow-hidden rounded-full ${className}`}>{children}</div>; }
+export function AvatarImage(props) { return <img className="size-full object-cover" {...props} />; }
+export function AvatarFallback({ children }) { return <span className="flex size-full items-center justify-center bg-muted text-sm">{children}</span>; }
