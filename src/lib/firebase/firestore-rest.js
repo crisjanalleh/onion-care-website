@@ -130,6 +130,17 @@ function matches(record, query = {}) {
   });
 }
 
+function requiresLocalFiltering(query) {
+  return Object.entries(query).some(([key, value]) => {
+    if (key === "$or") return true;
+    if (!value || typeof value !== "object") return false;
+    if ("$regex" in value) return true;
+    return Object.values(value).some((nested) =>
+      nested && typeof nested === "object" && requiresLocalFiltering(nested),
+    );
+  });
+}
+
 function compareValues(left, right) {
   if (left === right) return 0;
   if (left == null) return -1;
@@ -191,9 +202,7 @@ function createEntityApi(name, firebase, fetchImpl) {
   }
 
   async function fetchRows(query = {}, options = {}) {
-    const hasRegex = Object.values(query).some((value) =>
-      value && typeof value === "object" && ("$regex" in value || "$or" in value),
-    );
+    const hasLocalFilter = requiresLocalFiltering(query);
     const sortKey = options.sort?.replace(/^-/, "");
     const requiresLocalSort = ["created_date", "updated_date", "createdAt", "updatedAt"].includes(sortKey);
     const filters = Object.entries(query)
@@ -207,7 +216,7 @@ function createEntityApi(name, firebase, fetchImpl) {
     const structuredQuery = { from: [{ collectionId: collection }] };
     if (where) structuredQuery.where = where;
 
-    if (!hasRegex && options.sort && !requiresLocalSort) {
+    if (!hasLocalFilter && options.sort && !requiresLocalSort) {
       const descending = options.sort.startsWith("-");
       const fieldPath = descending ? options.sort.slice(1) : options.sort;
       structuredQuery.orderBy = [{
@@ -215,7 +224,7 @@ function createEntityApi(name, firebase, fetchImpl) {
         direction: descending ? "DESCENDING" : "ASCENDING",
       }];
     }
-    if (!hasRegex && !requiresLocalSort && !options.cursor && Number.isInteger(options.limit) && options.limit > 0) {
+    if (!hasLocalFilter && !requiresLocalSort && !options.cursor && Number.isInteger(options.limit) && options.limit > 0) {
       structuredQuery.limit = options.limit + 1;
     }
 

@@ -88,6 +88,36 @@ test("filters and sorts query results while supporting literal case-insensitive 
   assert.equal(page.items, page);
 });
 
+test("does not apply a server limit before local OR filters are evaluated", async () => {
+  let structuredQuery;
+  const database = createFirebaseDatabase(firebase, {
+    fetchImpl: async (_url, options) => {
+      structuredQuery = JSON.parse(options.body).structuredQuery;
+      let docs = [
+        document("FarmerProfile", "farmer-a", { role: "farmer", status: "open", name: "A unrelated" }),
+        document("FarmerProfile", "farmer-b", { role: "farmer", status: "open", name: "B unrelated" }),
+        document("FarmerProfile", "farmer-c", { role: "farmer", status: "open", name: "C target" }),
+        document("FarmerProfile", "admin-1", { role: "admin", status: "open", name: "D target" }),
+      ];
+      docs = docs.filter((doc) => doc.fields.role.stringValue === "farmer");
+      if (structuredQuery.limit) docs = docs.slice(0, structuredQuery.limit);
+      return Response.json(docs.map((entry) => ({ document: entry })));
+    },
+  });
+
+  const rows = await database.entities.FarmerProfile.filter(
+    {
+      role: "farmer",
+      status: "open",
+      $or: [{ name: { $regex: "target", $options: "i" } }],
+    },
+    { sort: "name", limit: 1 },
+  );
+
+  assert.equal(structuredQuery.limit, undefined);
+  assert.deepEqual(rows.map(({ id }) => id), ["farmer-c"]);
+});
+
 test("reports Firebase data failures instead of returning an empty success-shaped result", async () => {
   const database = createFirebaseDatabase(firebase, {
     fetchImpl: async () => Response.json(

@@ -1,116 +1,144 @@
-/**
- * The symptom-checklist assessment.
- *
- * The original legacy rules table is not recoverable from the surviving files, so
- * this is a transparent stand-in: a disease is scored by how many of the selected
- * symptoms' meaningful words appear in its catalogue entry. The shape of the result
- * is the part that the rest of the app depends on, and it is kept stable:
- * `{ resultType, candidateDiseaseIds, matchedRuleId, rulesetVersion }`.
- */
 import {
   AREA_FORMULA_VERSION,
-  DISEASES,
   RULESET_VERSION,
   SYMPTOM_GROUP_BY_ID,
-  SYMPTOM_GROUPS,
-} from "@/lib/domain/catalogue";
+} from "./catalogue.js";
 
 export const LOT_AREA_UNITS = [
   { id: "sqm", label: "square metres" },
   { id: "ha", label: "hectares" },
 ];
 
-const STOPWORDS = new Set([
-  "the", "a", "an", "or", "and", "of", "to", "with", "on", "in", "is", "are",
-  "for", "its", "it", "be", "by", "as", "at", "that", "this", "from", "into",
-]);
+// This technical ceiling keeps the normalized square-metre value within JS safe-integer range.
+const MAX_AREA_M2 = Number.MAX_SAFE_INTEGER;
+const MAX_DECIMAL_LENGTH = 40;
+const DECIMAL_INPUT = /^\d+(?:\.\d+)?$/;
 
-function words(text) {
-  return String(text ?? "")
-    .toLowerCase()
-    .split(/[^a-z]+/)
-    .filter((word) => word.length > 3 && !STOPWORDS.has(word));
+export class DiagnosisInputError extends Error {
+  constructor(field, message) {
+    super(message);
+    this.name = "DiagnosisInputError";
+    this.field = field;
+  }
 }
 
-const SYMPTOM_LABEL = new Map(
-  SYMPTOM_GROUPS.flatMap((group) => group.symptoms.map((symptom) => [symptom.id, symptom.label])),
-);
-
-function scoreDisease(disease, selectedSymptoms) {
-  const haystack = new Set(words([disease.summary, ...(disease.keySigns ?? [])].join(" ")));
-  let score = 0;
-  for (const id of selectedSymptoms) {
-    const label = SYMPTOM_LABEL.get(id);
-    if (!label) continue;
-    if (words(label).some((word) => haystack.has(word))) score += 1;
+function decimalText(value) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    let text = String(value);
+    if (!/[eE]/.test(text)) return text;
+    const [mantissa, exponentText] = text.toLowerCase().split("e");
+    const exponent = Number(exponentText);
+    const [whole, fraction = ""] = mantissa.split(".");
+    const digits = `${whole}${fraction}`;
+    const decimalPosition = whole.length + exponent;
+    if (decimalPosition <= 0) return `0.${"0".repeat(-decimalPosition)}${digits}`;
+    if (decimalPosition >= digits.length) return `${digits}${"0".repeat(decimalPosition - digits.length)}`;
+    return `${digits.slice(0, decimalPosition)}.${digits.slice(decimalPosition)}`;
   }
-  return score;
+  return typeof value === "string" ? value.trim() : null;
+}
+
+function decimalParts(value) {
+  const text = decimalText(value);
+  if (text === null || text.length > MAX_DECIMAL_LENGTH || !DECIMAL_INPUT.test(text)) return null;
+  const [whole, fraction = ""] = text.split(".");
+  return { coefficient: BigInt(`${whole}${fraction}`), scale: fraction.length };
+}
+
+function parseDecimal(value) {
+  const text = decimalText(value);
+  if (text === null || text.length > MAX_DECIMAL_LENGTH || !DECIMAL_INPUT.test(text)) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDecimal(coefficient, scale) {
+  if (coefficient === 0n) return "0";
+  const digits = coefficient.toString().padStart(scale + 1, "0");
+  if (scale === 0) return digits;
+  const whole = digits.slice(0, -scale);
+  const fraction = digits.slice(-scale).replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole;
 }
 
 /**
- * Produces the assessment shown on the result page.
- * resultType is "single_match", "differential" (a tie), or "no_match".
+ * No agronomist-reviewed rules are currently released. Keep valid observations,
+ * reject invalid category membership, and abstain rather than infer a diagnosis.
  */
 export function evaluateDiagnosis(categoryId, selectedSymptoms = []) {
-  const symptoms = [...new Set(selectedSymptoms)];
-  const inGroup = DISEASES.filter((disease) => (disease.symptomGroups ?? []).includes(categoryId));
-
-  const scored = inGroup
-    .map((disease) => ({ disease, score: scoreDisease(disease, symptoms) }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-  let resultType = "no_match";
-  let candidates = [];
-  let matchedRuleId = null;
-
-  if (scored.length > 0) {
-    const topScore = scored[0].score;
-    const leaders = scored.filter((entry) => entry.score === topScore).map((entry) => entry.disease);
-    candidates = leaders.map((disease) => disease.id);
-    resultType = leaders.length > 1 ? "differential" : "single_match";
-    matchedRuleId = `${categoryId}:${leaders.map((disease) => disease.id).join("+")}`;
-  } else if (inGroup.length > 0) {
-    // Nothing scored: offer the whole group as a differential rather than a dead end.
-    candidates = inGroup.map((disease) => disease.id);
-    resultType = "differential";
-    matchedRuleId = `${categoryId}:group`;
+  const group = SYMPTOM_GROUP_BY_ID[categoryId];
+  if (!group) {
+    throw new DiagnosisInputError("symptomCategory", "Choose a valid symptom group.");
+  }
+  if (!Array.isArray(selectedSymptoms)) {
+    throw new DiagnosisInputError("selectedSymptoms", "Symptoms must be provided as a list.");
   }
 
+  const validIds = new Set(group.symptoms.map((symptom) => symptom.id));
+  for (const symptomId of selectedSymptoms) {
+    if (typeof symptomId !== "string" || !validIds.has(symptomId)) {
+      throw new DiagnosisInputError("selectedSymptoms", "One or more symptoms do not belong to the selected group.");
+    }
+  }
+
+  const symptoms = [...new Set(selectedSymptoms)];
   return {
     rulesetVersion: RULESET_VERSION,
     areaFormulaVersion: AREA_FORMULA_VERSION,
     symptomCategory: categoryId,
     selectedSymptoms: symptoms,
-    groupLabel: SYMPTOM_GROUP_BY_ID[categoryId]?.label ?? null,
-    resultType,
-    candidateDiseaseIds: candidates,
-    matchedRuleId,
+    groupLabel: group.label,
+    resultType: "inconclusive",
+    candidateDiseaseIds: [],
+    matchedRuleId: null,
+    reviewStatus: "not_released",
   };
 }
 
 /** Field-level errors for the affected-area step; an empty object means "go on". */
-export function validateAreaInputs({ lotArea, lotAreaUnit, affectedAreaPercent }) {
+export function validateAreaInputs({ lotArea, lotAreaUnit, affectedAreaPercent } = {}) {
   const errors = {};
+  const area = decimalParts(lotArea);
+  const areaMultiplier = lotAreaUnit === "ha" ? 10_000 : 1;
+  const canonicalArea = area
+    ? area.coefficient * BigInt(areaMultiplier)
+    : null;
+  const precision = area ? 10n ** BigInt(area.scale) : null;
 
-  const area = Number(lotArea);
-  if (lotArea === "" || lotArea === null || lotArea === undefined || Number.isNaN(area) || area <= 0) {
-    errors.lotArea = "Enter the lot area as a number greater than zero.";
+  if (
+    !area ||
+    area.coefficient === 0n ||
+    canonicalArea > BigInt(MAX_AREA_M2) * precision
+  ) {
+    errors.lotArea = "Enter the lot area as a number greater than zero and within the supported range.";
   }
   if (!LOT_AREA_UNITS.some((unit) => unit.id === lotAreaUnit)) {
     errors.lotAreaUnit = "Choose a unit.";
   }
-  const percent = Number(affectedAreaPercent);
-  if (
-    affectedAreaPercent === "" ||
-    affectedAreaPercent === null ||
-    affectedAreaPercent === undefined ||
-    Number.isNaN(percent) ||
-    percent < 0 ||
-    percent > 100
-  ) {
+
+  const percent = parseDecimal(affectedAreaPercent);
+  if (percent === null || percent < 0 || percent > 100) {
     errors.affectedAreaPercent = "Enter the affected area as a percentage from 0 to 100.";
   }
 
   return errors;
+}
+
+export function calculateAffectedArea({ lotArea, lotAreaUnit, affectedAreaPercent } = {}) {
+  const errors = validateAreaInputs({ lotArea, lotAreaUnit, affectedAreaPercent });
+  if (Object.keys(errors).length) {
+    const [field, message] = Object.entries(errors)[0];
+    throw new DiagnosisInputError(field, message);
+  }
+
+  const area = decimalParts(lotArea);
+  const percent = decimalParts(affectedAreaPercent);
+  const totalCoefficient = area.coefficient * (lotAreaUnit === "ha" ? 10_000n : 1n);
+  const affectedCoefficient = totalCoefficient * percent.coefficient;
+  return {
+    totalAreaM2: formatDecimal(totalCoefficient, area.scale),
+    estimatedAffectedAreaM2: formatDecimal(affectedCoefficient, area.scale + percent.scale + 2),
+    version: AREA_FORMULA_VERSION,
+  };
 }

@@ -14,7 +14,7 @@ Firebase Auth supports email/password registration and login, email verification
 
 ## Requirements
 
-- Node.js 22.12 or newer
+- Node.js 24.15 or newer in the 24.x line, or 26.0 or newer. The repository pins Node 24.16.0 in `.nvmrc`.
 - npm
 - Java installed for the Firebase emulators
 

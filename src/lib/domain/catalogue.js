@@ -4,8 +4,8 @@
  * Legacy labels are preserved exactly so that existing records stay readable.
  */
 
-export const RULESET_VERSION = "legacy-rules-v1-compatible";
-export const AREA_FORMULA_VERSION = "legacy-area-formula-v1";
+export const RULESET_VERSION = "unreleased-rules-v1";
+export const AREA_FORMULA_VERSION = "affected-area-estimate-v1";
 
 export const SYMPTOM_GROUPS = [
   {

@@ -2,7 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 import { DISEASE_BY_ID } from "@/lib/domain/catalogue";
-import { evaluateDiagnosis } from "@/lib/domain/diagnosis";
+import {
+  calculateAffectedArea,
+  DiagnosisInputError,
+  evaluateDiagnosis,
+  validateAreaInputs,
+} from "@/lib/domain/diagnosis";
 import { fail, requireProfile, svc } from "./shared";
 
 /**
@@ -15,20 +20,27 @@ export const saveDiagnosis = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(
     z.object({
-      symptomCategory: z.string(),
-      selectedSymptoms: z.array(z.string()).min(1, "Record at least one symptom."),
-      lotArea: z.number().positive(),
-      lotAreaUnit: z.string(),
-      affectedAreaPercent: z.number().min(0).max(100),
+      symptomCategory: z.string().min(1).max(64),
+      selectedSymptoms: z.array(z.string().min(1).max(64)).min(1, "Record at least one symptom.").max(15),
+      lotArea: z.union([z.number().finite(), z.string().max(40)]),
+      lotAreaUnit: z.enum(["sqm", "ha"]),
+      affectedAreaPercent: z.union([z.number().finite(), z.string().max(40)]),
     }),
   )
   .handler(async ({ data, context }) => {
     const profile = await requireProfile(context);
     const entities = svc(context).entities;
-    const result = evaluateDiagnosis(data.symptomCategory, data.selectedSymptoms);
-
-    if (result.resultType === "no_match") {
-      throw fail("This combination of symptoms does not match a stored rule, so it cannot be saved.", 422);
+    const areaErrors = validateAreaInputs(data);
+    if (Object.keys(areaErrors).length) {
+      throw fail(Object.values(areaErrors)[0], 422);
+    }
+    const areaEstimate = calculateAffectedArea(data);
+    let result;
+    try {
+      result = evaluateDiagnosis(data.symptomCategory, data.selectedSymptoms);
+    } catch (error) {
+      if (!(error instanceof DiagnosisInputError)) throw error;
+      throw fail(error.message, 422);
     }
 
     const leadId = result.candidateDiseaseIds[0] ?? null;
@@ -47,12 +59,17 @@ export const saveDiagnosis = createServerFn({ method: "POST" })
       diseaseName: result.resultType === "single_match" ? DISEASE_BY_ID[leadId]?.legacyLabel ?? null : null,
       matchedRuleId: result.matchedRuleId,
       rulesetVersion: result.rulesetVersion,
+      reviewStatus: result.reviewStatus,
       areaFormulaVersion: result.areaFormulaVersion,
-      lotArea: data.lotArea,
+      lotArea: Number(data.lotArea),
+      lotAreaInput: String(data.lotArea),
       lotAreaUnit: data.lotAreaUnit,
-      affectedAreaPercent: data.affectedAreaPercent,
+      affectedAreaPercent: Number(data.affectedAreaPercent),
+      affectedAreaPercentInput: String(data.affectedAreaPercent),
+      totalAreaM2: areaEstimate.totalAreaM2,
+      estimatedAffectedAreaM2: areaEstimate.estimatedAffectedAreaM2,
       occurredAt,
-      schemaVersion: 2,
+      schemaVersion: 3,
       legacyPath: `diagnoses/${profile.username}/${occurredAt}`,
     });
 

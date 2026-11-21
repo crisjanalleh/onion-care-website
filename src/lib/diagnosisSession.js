@@ -15,11 +15,12 @@ export function readPendingDiagnosis() {
 }
 
 export function writePendingDiagnosis(value) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") return false;
   try {
     window.sessionStorage.setItem(KEY, JSON.stringify(value));
+    return true;
   } catch {
-    // A full or unavailable session storage just means nothing to carry over.
+    return false;
   }
 }
 

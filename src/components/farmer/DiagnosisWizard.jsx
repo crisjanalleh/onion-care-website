@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleAlert, Ruler, Stethoscope } from "lucide-react";
 import { SYMPTOM_GROUPS } from "@/lib/domain/catalogue";
-import { LOT_AREA_UNITS, evaluateDiagnosis, validateAreaInputs } from "@/lib/domain/diagnosis";
+import {
+  calculateAffectedArea,
+  LOT_AREA_UNITS,
+  evaluateDiagnosis,
+  validateAreaInputs,
+} from "@/lib/domain/diagnosis";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +24,9 @@ export default function DiagnosisWizard({ onComplete, busy }) {
   const [errors, setErrors] = useState({});
 
   const group = useMemo(() => SYMPTOM_GROUPS.find((g) => g.id === categoryId) ?? null, [categoryId]);
+  const areaEstimate = step === 3
+    ? calculateAffectedArea({ lotArea, lotAreaUnit, affectedAreaPercent })
+    : null;
 
   const toggleSymptom = (id) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
@@ -55,9 +63,9 @@ export default function DiagnosisWizard({ onComplete, busy }) {
     onComplete({
       symptomCategory: categoryId,
       selectedSymptoms: selected,
-      lotArea: Number(lotArea),
+      lotArea,
       lotAreaUnit,
-      affectedAreaPercent: Number(affectedAreaPercent),
+      affectedAreaPercent,
       result,
     });
   };
@@ -252,7 +260,14 @@ export default function DiagnosisWizard({ onComplete, busy }) {
                 <dt className="text-sm text-muted-foreground">Affected area</dt>
                 <dd className="text-sm font-medium">{affectedAreaPercent}%</dd>
               </div>
+              <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:justify-between">
+                <dt className="text-sm text-muted-foreground">Estimated affected area</dt>
+                <dd className="text-sm font-medium">{areaEstimate.estimatedAffectedAreaM2} m²</dd>
+              </div>
             </dl>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              This is an area estimate only. It is not a treatment area or a chemical quantity.
+            </p>
           </div>
         ) : null}
       </div>

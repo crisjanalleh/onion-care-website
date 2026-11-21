@@ -18,6 +18,7 @@ import { useSessionProfile } from "@/hooks/useSessionProfile";
 import { saveDiagnosis } from "@/lib/server/diagnosis";
 import { submitDiseaseReport } from "@/lib/server/reports";
 import { DISEASE_BY_ID } from "@/lib/domain/catalogue";
+import { DiagnosisInputError, evaluateDiagnosis } from "@/lib/domain/diagnosis";
 import { clearPendingDiagnosis, readPendingDiagnosis } from "@/lib/diagnosisSession";
 
 export const Route = createFileRoute("/_authed/_farmer/diagnose/result")({
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/_authed/_farmer/diagnose/result")({
 
 function ResultPage() {
   const [pending, setPending] = useState(null);
+  const [pendingError, setPendingError] = useState(null);
   const [ready, setReady] = useState(false);
   const { profile } = useSessionProfile();
   const [saving, setSaving] = useState(false);
@@ -41,8 +43,16 @@ function ResultPage() {
   useEffect(() => {
     const parsed = readPendingDiagnosis();
     if (parsed) {
-      setPending(parsed);
-      setDiseaseChoice(parsed.result?.candidateDiseaseIds?.[0] ?? "");
+      try {
+        const result = evaluateDiagnosis(parsed.symptomCategory, parsed.selectedSymptoms);
+        const current = { ...parsed, result };
+        setPending(current);
+        setDiseaseChoice(result.candidateDiseaseIds[0] ?? "");
+      } catch (error) {
+        if (!(error instanceof DiagnosisInputError)) throw error;
+        clearPendingDiagnosis();
+        setPendingError("The saved answers could not be checked. Start a new symptom checklist.");
+      }
     }
     setReady(true);
   }, []);
@@ -59,10 +69,9 @@ function ResultPage() {
     return (
       <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-6 text-center">
         <TriangleAlert className="mx-auto h-6 w-6 text-amber-700" />
-        <h1 className="mt-3 text-lg font-semibold">No assessment in progress</h1>
+        <h1 className="mt-3 text-lg font-semibold">{pendingError ? "Answers need to be checked again" : "No assessment in progress"}</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          This result is no longer available in this browser session. Run the symptom checklist again to
-          produce a new assessment.
+          {pendingError ?? "This result is no longer available in this browser session. Run the symptom checklist again."}
         </p>
         <Button asChild className="mt-5">
           <Link to="/diagnose">Start a diagnosis</Link>
@@ -73,7 +82,7 @@ function ResultPage() {
 
   const { result, symptomCategory, selectedSymptoms, lotArea, lotAreaUnit, affectedAreaPercent } = pending;
   const candidates = result.candidateDiseaseIds.map((id) => DISEASE_BY_ID[id]).filter(Boolean);
-  const canSave = result.resultType === "single_match" || result.resultType === "differential";
+  const canSave = result.resultType === "inconclusive" || result.resultType === "single_match" || result.resultType === "differential";
 
   const handleSave = async () => {
     setSaving(true);
@@ -83,9 +92,9 @@ function ResultPage() {
         data: {
           symptomCategory,
           selectedSymptoms,
-          lotArea: Number(lotArea),
+          lotArea,
           lotAreaUnit,
-          affectedAreaPercent: Number(affectedAreaPercent),
+          affectedAreaPercent,
         },
       });
       setSavedId(response.record.id);
@@ -117,7 +126,6 @@ function ResultPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <DiagnosisResultView
-        result={result}
         categoryId={symptomCategory}
         selectedSymptoms={selectedSymptoms}
         lotArea={lotArea}
@@ -146,15 +154,17 @@ function ResultPage() {
           </Button>
         )}
 
-        <Button
-          type="button"
-          variant="outline"
-          className="gap-2"
-          onClick={() => setReportOpen(true)}
-          disabled={!diseaseChoice}
-        >
-          <ClipboardList className="h-4 w-4" /> Submit a report
-        </Button>
+        {diseaseChoice ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={() => setReportOpen(true)}
+            disabled={saving}
+          >
+            <ClipboardList className="h-4 w-4" /> Submit a report
+          </Button>
+        ) : null}
 
         <Button asChild variant="outline" className="gap-2">
           <Link to="/messages">
