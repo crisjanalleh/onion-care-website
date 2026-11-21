@@ -1,10 +1,66 @@
 /* global process, console */
 import { writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import admin from "firebase-admin";
 
 const PROJECT_ID = "onioncare-e1e5a";
 const DATABASE_URL = "https://onioncare-e1e5a-default-rtdb.firebaseio.com";
 const STORAGE_BUCKET = "onioncare-e1e5a.firebasestorage.app";
+const OUTPUT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..", "LIVE-FIREBASE-INVENTORY.json");
+
+function createReport() {
+  return {
+    projectId: PROJECT_ID,
+    credentialConfigured: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()),
+    status: "running",
+    services: {
+      adminSdk: "not-tested",
+      firestore: "not-tested",
+      realtimeDatabase: "not-tested",
+      authentication: "not-tested",
+      storage: "not-tested",
+    },
+    firestore: { collections: {} },
+    realtimeDatabase: { topLevelNodes: [] },
+    authentication: { status: "not-tested", count: null },
+    storage: { status: "not-tested", fileCount: null, files: [] },
+    errors: {},
+    blockers: [],
+  };
+}
+
+function safeDiagnostic(error) {
+  const rawName = String(error?.name ?? "Error");
+  const rawCode = String(error?.code ?? "unknown");
+  let message = String(error?.message ?? "No diagnostic message was provided.");
+
+  message = message
+    .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/gi, "[REDACTED PRIVATE KEY]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/(access[_ -]?token|refresh[_ -]?token|id[_ -]?token|private[_ -]?key|client[_ -]?secret|password)\s*[:=]\s*["']?[^,\s"'&}]+/gi, "$1=[REDACTED]")
+    .replace(/([?&](?:key|token|credential|signature|sig)=)[^&\s]+/gi, "$1[REDACTED]")
+    .replace(/[\r\n\t]+/g, " ")
+    .slice(0, 500);
+
+  return {
+    name: /^[A-Za-z][A-Za-z0-9_.-]{0,80}$/.test(rawName) ? rawName : "Error",
+    code: /^[A-Za-z0-9_.:/-]{1,100}$/.test(rawCode) ? rawCode : "unknown",
+    message,
+  };
+}
+
+function recordFailure(report, service, error) {
+  const diagnostic = safeDiagnostic(error);
+  report.services[service] = "blocked";
+  report.errors[service] = diagnostic;
+  report.blockers.push({ service, ...diagnostic });
+}
+
+async function writeReport(report) {
+  report.generatedAt = new Date().toISOString();
+  await writeFile(OUTPUT_PATH, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+}
 
 function fieldFingerprint(value) {
   if (value === null) return "null";
@@ -68,23 +124,18 @@ function countRtdb(node) {
   return { nodes, pushIds };
 }
 
-async function main() {
-  const report = {
-    projectId: PROJECT_ID,
-    credentialConfigured: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS),
-    services: {},
-    firestore: { collections: {} },
-    realtimeDatabase: { topLevelNodes: [] },
-    authentication: { status: "not-tested", count: null },
-    storage: { status: "not-tested", fileCount: null, files: [] },
-  };
-
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+async function main(report) {
+  if (!report.credentialConfigured) {
+    report.status = "blocked";
+    report.services.adminSdk = "not-configured";
     report.blocker = "GOOGLE_APPLICATION_CREDENTIALS is not available in this execution environment.";
-    await writeFile(
-      "LIVE-FIREBASE-INVENTORY.md",
-      `# Live Firebase inventory\n\nStatus: BLOCKED.\n\n${report.blocker}\n`,
-    );
+    report.errors.credentials = {
+      name: "ConfigurationError",
+      code: "CREDENTIALS_MISSING",
+      message: report.blocker,
+    };
+    report.blockers.push({ service: "credentials", ...report.errors.credentials });
+    await writeReport(report);
     process.exitCode = 1;
     return;
   }
@@ -97,13 +148,26 @@ async function main() {
       storageBucket: STORAGE_BUCKET,
     });
   } catch (error) {
-    report.services.adminSdk = `not-authenticated: ${error.code || "unknown"}`;
+    recordFailure(report, "adminSdk", error);
+    report.status = "blocked";
+    report.blocker = "Firebase Admin SDK initialization failed.";
+    await writeReport(report);
+    process.exitCode = 1;
+    return;
   }
 
   if (!admin.apps.length) {
-    await writeFile("LIVE-FIREBASE-INVENTORY.md", `# Live Firebase inventory\n\nStatus: BLOCKED.\n\n${report.blocker ?? "Firebase Admin SDK could not initialize."}\n`);
+    const error = Object.assign(new Error("Firebase Admin SDK did not initialize an app."), {
+      code: "INITIALIZATION_FAILED",
+    });
+    recordFailure(report, "adminSdk", error);
+    report.status = "blocked";
+    report.blocker = "Firebase Admin SDK initialization failed.";
+    await writeReport(report);
+    process.exitCode = 1;
     return;
   }
+  report.services.adminSdk = "accessible";
 
   try {
     const collections = await admin.firestore().listCollections();
@@ -112,7 +176,7 @@ async function main() {
     }
     report.services.firestore = "accessible";
   } catch (error) {
-    report.services.firestore = `blocked: ${error.code || "unknown"} (${error.message || "permission denied"})`;
+    recordFailure(report, "firestore", error);
   }
 
   try {
@@ -122,7 +186,7 @@ async function main() {
     report.realtimeDatabase.count = countRtdb(value);
     report.services.realtimeDatabase = "accessible";
   } catch (error) {
-    report.services.realtimeDatabase = `blocked: ${error.code || "unknown"} (${error.message || "permission denied"})`;
+    recordFailure(report, "realtimeDatabase", error);
   }
 
   try {
@@ -137,7 +201,7 @@ async function main() {
     report.services.authentication = "accessible";
   } catch (error) {
     report.authentication.status = "blocked";
-    report.services.authentication = `blocked: ${error.code || "unknown"} (${error.message || "permission denied"})`;
+    recordFailure(report, "authentication", error);
   }
 
   try {
@@ -154,32 +218,29 @@ async function main() {
     report.services.storage = "accessible";
   } catch (error) {
     report.storage.status = "blocked";
-    report.services.storage = `blocked: ${error.code || "unknown"} (${error.message || "permission denied"})`;
+    recordFailure(report, "storage", error);
   }
 
-  const lines = [
-    "# Live Firebase inventory",
-    "",
-    `Project: \`${PROJECT_ID}\``,
-    "",
-    "| Service | Status |",
-    "|---|---|",
-    ...Object.entries(report.services).map(([service, status]) => `| ${service} | ${status} |`),
-    "",
-    "## Firestore",
-    "",
-  ];
-  for (const [collection, details] of Object.entries(report.firestore.collections)) {
-    lines.push(`- \`${collection}\`: ${details.documentCount} documents`);
+  const hasBlockedService = Object.values(report.services).includes("blocked");
+  report.status = hasBlockedService ? "partial" : "complete";
+  if (hasBlockedService) {
+    report.blocker = "One or more Firebase services could not be accessed.";
   }
-  lines.push("", "## Realtime Database", "", `Top-level nodes: ${(report.realtimeDatabase.topLevelNodes || []).join(", ") || "none"}`);
-  lines.push("", "## Authentication", "", `Status: ${report.authentication.status}; count: ${report.authentication.count ?? "unknown"}`);
-  lines.push("", "## Storage", "", `Status: ${report.storage.status}; file count: ${report.storage.fileCount ?? "unknown"}`);
-  await writeFile("LIVE-FIREBASE-INVENTORY.md", `${lines.join("\n")}\n`);
-  await writeFile("LIVE-FIREBASE-INVENTORY.json", `${JSON.stringify(report, null, 2)}\n`);
+  await writeReport(report);
+  if (hasBlockedService) process.exitCode = 1;
 }
 
-main().catch(() => {
-  console.error("Firebase audit failed before a live inventory could be completed.");
+const report = createReport();
+main(report).catch(async (error) => {
+  const diagnostic = safeDiagnostic(error);
+  report.status = "failed";
+  report.blocker = "An unexpected error occurred during the Firebase audit.";
+  report.errors.audit = diagnostic;
+  report.blockers.push({ service: "audit", ...diagnostic });
+  try {
+    await writeReport(report);
+  } catch {
+    console.error("Firebase audit failed and its JSON report could not be written.");
+  }
   process.exitCode = 1;
 });

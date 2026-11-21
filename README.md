@@ -10,7 +10,7 @@ OnionCare is a web platform for onion growers and agricultural administrators. I
 - **Hosting:** Cloudflare Workers.
 - **AI integrations:** None.
 
-Firebase Auth supports email/password registration and login, email verification, password recovery, and Google sign-in when the Firebase project is configured. Firebase MFA is not implemented. Live Firebase access and deployment have not been verified; see [Firebase connection status](./FIREBASE-CONNECTION-STATUS.md).
+Firebase Auth supports email/password registration and login, email verification, password recovery, and Google sign-in when the Firebase project is configured. Firebase MFA is not implemented. Live Firebase access and deployment have not been verified.
 
 ## Requirements
 
@@ -71,7 +71,7 @@ Firebase Auth supports email/password registration and login, email verification
 - The checked-in `.firebaserc` defaults to `demo-onioncare`; local emulator data is not production data.
 - For a real Firebase project, configure its Web app values in the ignored `.env.local` file and Worker-only service-account credentials in `.dev.vars` for local work. For Cloudflare, store private credentials as Worker secrets with Wrangler; never put private keys in Vite variables or source control.
 - Google sign-in requires the provider and authorized domains to be configured in Firebase Console.
-- Do not deploy, migrate data, or change production Firebase rules without verifying project access, backups, and owner approval. See [Firebase security](./FIREBASE-SECURITY.md), [website schema](./FIREBASE-WEBSITE-SCHEMA.md), and [data migration plan](./DATA-MIGRATION-PLAN.md).
+- Do not deploy, migrate data, or change production Firebase rules without verifying project access, backups, and owner approval.
 
 ## License
 

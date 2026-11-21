@@ -1,0 +1,44 @@
+{
+  "projectId": "onioncare-e1e5a",
+  "credentialConfigured": false,
+  "status": "blocked",
+  "services": {
+    "adminSdk": "not-configured",
+    "firestore": "not-tested",
+    "realtimeDatabase": "not-tested",
+    "authentication": "not-tested",
+    "storage": "not-tested"
+  },
+  "firestore": {
+    "collections": {}
+  },
+  "realtimeDatabase": {
+    "topLevelNodes": []
+  },
+  "authentication": {
+    "status": "not-tested",
+    "count": null
+  },
+  "storage": {
+    "status": "not-tested",
+    "fileCount": null,
+    "files": []
+  },
+  "errors": {
+    "credentials": {
+      "name": "ConfigurationError",
+      "code": "CREDENTIALS_MISSING",
+      "message": "GOOGLE_APPLICATION_CREDENTIALS is not available in this execution environment."
+    }
+  },
+  "blockers": [
+    {
+      "service": "credentials",
+      "name": "ConfigurationError",
+      "code": "CREDENTIALS_MISSING",
+      "message": "GOOGLE_APPLICATION_CREDENTIALS is not available in this execution environment."
+    }
+  ],
+  "blocker": "GOOGLE_APPLICATION_CREDENTIALS is not available in this execution environment.",
+  "generatedAt": "2026-11-21T14:30:23.258Z"
+}
